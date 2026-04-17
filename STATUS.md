@@ -58,7 +58,7 @@ Phase 4 — 검증 · A/B
 
 | 항목 | 값 |
 | --- | --- |
-| Hash | (이번 커밋 후 갱신) |
+| Hash | `7ce3894` |
 | Author | Claude Code |
 | Date | 2026-04-18 |
 | Scope | `P4-0` A/B 토글 (F1 = denoise on/off) |
