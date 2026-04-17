@@ -1,22 +1,19 @@
 // -------------------------------------------------------
-// PathTracer.hlsl — 개선된 경로 추적 컴퓨트 셰이더
+// PathTracer.hlsl — Phase 0: per-frame G-buffer output (NRD 준비)
 //
-// 주요 변경:
-//   1. 종횡비를 스크린 실제 크기에서 계산
-//   2. Diffuse cosine-weighted 중요도 샘플링 추가
-//   3. Lobe selection (specular/diffuse) + combined PDF
-//   4. NEE 원뿔각 샘플링 + MIS (Power Heuristic)
-//   5. 간접광이 광원 히트 시에도 MIS 적용
-//   6. Russian Roulette 개선 (bounce >= 1)
-//   7. 톤맵핑 제거 — 누적만 수행, ToneMapCS에서 처리
+// 주요 변경 (Phase 0):
+//   1. g_accum 누적 모델 제거 — per-frame overwrite로 전환
+//   2. TracePath → diffuse / specular 분리 반환 (TraceResult)
+//   3. 7개 G-buffer UAV (u0~u6) 출력: diffuse, specular, viewZ,
+//      normalRoughness, motionVector, baseColorMetalness, emissive
+//   4. motionVector는 prevViewProj 미추가로 현재 0 출력 (Phase 0 [X] 대기)
 // -------------------------------------------------------
 
-// cbuffer를 includes 앞에 선언 (Scene.hlsli에서 g_lightCount 참조)
 cbuffer GlobalUB : register(b0) {
     float3 g_cameraPos;
     float  g_fov;
     float3 g_cameraFront;
-    float  g_aspectRatio;   // C++ 폴백용 (사용하지 않음)
+    float  g_aspectRatio;   // 폴백용 (미사용)
     float3 g_cameraUp;
     float  g_frameCount;
     float3 g_cameraRight;
@@ -26,10 +23,55 @@ cbuffer GlobalUB : register(b0) {
 #include "BRDF.hlsli"
 #include "Scene.hlsli"
 
-RWTexture2D<float4> g_accum : register(u0);
+// -------------------------------------------------------
+// G-buffer UAV (u0~u6) — AGENTS.md §4 Phase 0 목표 G-buffer
+// -------------------------------------------------------
+RWTexture2D<float4>       g_diffuseRadiance    : register(u0); // .rgb=diffuse, .a=hitT
+RWTexture2D<float4>       g_specularRadiance   : register(u1); // .rgb=specular, .a=hitT
+RWTexture2D<float>        g_viewZ              : register(u2); // linear view-space Z (양수, 전방)
+RWTexture2D<unorm float4> g_normalRoughness    : register(u3); // .rg=octa-packed N, .b=roughness
+RWTexture2D<float2>       g_motionVector       : register(u4); // 픽셀 단위 (prev-curr)
+RWTexture2D<unorm float4> g_baseColorMetalness : register(u5); // .rgb=albedo, .a=metalness
+RWTexture2D<float4>       g_emissive           : register(u6); // .rgb=emissive
 
-static const int MAX_BOUNCES       = 6;
-static const int SAMPLES_PER_PIXEL = 1;
+static const int   MAX_BOUNCES       = 6;
+static const int   SAMPLES_PER_PIXEL = 1;
+static const float NRD_HIT_T_MAX     = 1e16f; // 하늘/미스 센티널
+
+// -------------------------------------------------------
+// TracePath 반환 구조체
+// -------------------------------------------------------
+struct TraceResult {
+    float3 diffuse;     // diffuse 방사휘도 (per-frame)
+    float3 specular;    // specular 방사휘도 (per-frame)
+    float  hitT;        // 첫 번째 히트 거리 (NRD .a 채널)
+    // 첫 번째 히트의 G-buffer 데이터
+    float3 normal;
+    float  roughness;
+    float3 albedo;
+    float  metalness;
+    float3 emissive;
+    float  viewZ;       // linear view-space Z (양수)
+    bool   hitSurface;  // 카메라 레이가 표면에 맞았는지
+};
+
+// -------------------------------------------------------
+// 법선 옥타헤드럴 인코딩 (NRD 권장)
+// 단위 구 벡터 → [0,1]^2 2D UV
+// -------------------------------------------------------
+float2 OctahedralEncode(float3 n) {
+    float l1 = abs(n.x) + abs(n.y) + abs(n.z);
+    n /= (l1 + 1e-10f);
+    float2 uv;
+    if (n.z >= 0.0f) {
+        uv = n.xy;
+    } else {
+        float signX = n.x >= 0.0f ? 1.0f : -1.0f;
+        float signY = n.y >= 0.0f ? 1.0f : -1.0f;
+        uv = (1.0f - abs(float2(n.y, n.x))) * float2(signX, signY);
+    }
+    return uv * 0.5f + 0.5f;
+}
 
 // -------------------------------------------------------
 // 카메라 레이 생성 (종횡비를 스크린 실제 크기에서 계산)
@@ -39,7 +81,6 @@ Ray GenerateCameraRay(uint2 pixelCoord, uint2 screenSize, uint frameCount) {
     float2 uv     = ((float2)pixelCoord + 0.5f + jitter) / (float2)screenSize;
     float2 ndc    = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
 
-    // [FIX] 스크린 실제 크기에서 종횡비를 계산하여 리사이즈/회전에 대응
     float aspectRatio = (float)screenSize.x / (float)screenSize.y;
     float halfH = tan(g_fov * 0.5f);
     float halfW = halfH * aspectRatio;
@@ -56,111 +97,149 @@ Ray GenerateCameraRay(uint2 pixelCoord, uint2 screenSize, uint frameCount) {
 }
 
 // -------------------------------------------------------
-// 경로 추적 (Lobe Selection + MIS + 개선된 RR)
+// 경로 추적 — diffuse/specular 분리 반환
+//
+// 분리 전략:
+//   - 첫 히트 NEE: lobe.pDiff → diffuse, lobe.pSpec → specular
+//   - 첫 간접 바운스의 로브 타입으로 이후 경로 채널 결정
+//     (diffuse 바운스로 시작 → 이후 기여 모두 diffuse, 반대 동일)
 // -------------------------------------------------------
-float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
-    float3 totalRadiance = float3(0, 0, 0);
+TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
+    TraceResult result;
+    result.diffuse    = float3(0, 0, 0);
+    result.specular   = float3(0, 0, 0);
+    result.hitT       = NRD_HIT_T_MAX;
+    result.normal     = float3(0, 1, 0);
+    result.roughness  = 1.0f;
+    result.albedo     = float3(0, 0, 0);
+    result.metalness  = 0.0f;
+    result.emissive   = float3(0, 0, 0);
+    result.viewZ      = NRD_HIT_T_MAX;
+    result.hitSurface = false;
+
     float3 throughput    = float3(1, 1, 1);
-    float  prevBrdfPdf   = 0.0f;   // 이전 바운스의 BRDF PDF (MIS용)
-    bool   prevSpecular  = true;    // 이전 바운스가 specular인지 (MIS 판단용)
+    float  prevBrdfPdf   = 0.0f;
+    bool   prevSpecular  = true;
+    bool   pathTypeSet   = false;   // 첫 간접 바운스 로브가 결정됐는지
+    bool   pathIsSpecular = false;  // true = specular 경로, false = diffuse 경로
 
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
         SurfaceHit hit;
         if (!SceneIntersect(ray, hit)) {
-            totalRadiance += GetSkyColor(ray.direction) * throughput;
+            // 하늘 히트 — MIS 없음
+            float3 sky = GetSkyColor(ray.direction) * throughput;
+            if (any(sky > 0.0f)) {
+                if (bounce == 0 || !pathTypeSet || !pathIsSpecular)
+                    result.diffuse  += sky;
+                else
+                    result.specular += sky;
+            }
             break;
         }
 
         // -------------------------------------------------------
-        // Emitter 히트: MIS 간접광 경로
+        // bounce 0: G-buffer 수집
+        // -------------------------------------------------------
+        if (bounce == 0) {
+            result.hitT       = hit.t;
+            result.normal     = hit.normal;
+            result.roughness  = hit.material.roughness;
+            result.albedo     = hit.material.albedo;
+            result.metalness  = hit.material.metallic;
+            result.emissive   = hit.material.emissive;
+            // viewZ: 카메라 전방으로의 선형 투영 (RH, 양수 = 전방)
+            result.viewZ      = dot(hit.p - g_cameraPos, g_cameraFront);
+            result.hitSurface = true;
+        }
+
+        // -------------------------------------------------------
+        // Emitter 히트
         // -------------------------------------------------------
         if (IsEmitter(hit.material)) {
+            float3 emitContrib;
             if (bounce == 0) {
-                // 카메라에서 직접 본 광원 — MIS 불필요
-                totalRadiance += hit.material.emissive * throughput;
+                emitContrib = hit.material.emissive * throughput;
+                result.diffuse += emitContrib;
             } else {
-                // BRDF 샘플링으로 광원에 맞음 → MIS 가중치 적용
-                // prevBrdfPdf : 이전 바운스에서 이 방향을 샘플링한 PDF
-                // lightPdf    : 이 방향이 NEE에서 샘플링될 확률
-                float3 prevHitP = ray.origin; // offset 포함된 이전 히트점
                 int hitLightIdx = FindHitLight(hit.p, hit.normal);
+                float w = 1.0f;
                 if (hitLightIdx >= 0) {
-                    float lightPdf = ComputeLightPdf(prevHitP, hitLightIdx);
-                    float w = (prevSpecular || lightPdf <= 0.0f)
-                            ? 1.0f
-                            : PowerHeuristic(prevBrdfPdf, lightPdf);
-                    totalRadiance += hit.material.emissive * throughput * w;
-                } else {
-                    // 광원 목록에 없는 emissive (예: emissive 메시)
-                    totalRadiance += hit.material.emissive * throughput;
+                    float lightPdf = ComputeLightPdf(ray.origin, hitLightIdx);
+                    w = (prevSpecular || lightPdf <= 0.0f)
+                        ? 1.0f
+                        : PowerHeuristic(prevBrdfPdf, lightPdf);
                 }
+                emitContrib = hit.material.emissive * throughput * w;
+                if (pathTypeSet && pathIsSpecular)
+                    result.specular += emitContrib;
+                else
+                    result.diffuse  += emitContrib;
             }
             break;
         }
 
         float3 N = hit.normal;
         float3 V = -ray.direction;
+        LobeWeights lobe = ComputeLobeWeights(N, V, hit.material.albedo, hit.material.metallic);
 
         // -------------------------------------------------------
-        // NEE (Next Event Estimation) — 원뿔 샘플링 + MIS
+        // NEE (Next Event Estimation) + MIS
         // -------------------------------------------------------
         for (int li = 0; li < (int)g_lightCount; ++li) {
             float2 xiNEE = GetRandomSamples(
                 pixelCoord, (uint)(bounce * 10 + li + 50), frameCount);
 
-            float lightPdf;
+            float  lightPdf;
             float3 neeRaw = SampleDirectLight(
                 hit.p, N, V, hit.material, xiNEE, li, lightPdf);
 
             if (lightPdf > 0.0f && any(neeRaw > 0.0f)) {
-                // BRDF 의 combined PDF (이 방향에 대해)
-                // SampleDirectLight 내부에서 L을 복원해야 하므로 여기서 재계산
-                // → 원뿔 방향을 다시 만들기보다, neeRaw에 이미 brdf*Le*NdotL/pdfLight가 들어있으므로
-                //   MIS weight만 곱하면 됨
-                LobeWeights lobe = ComputeLobeWeights(N, V, hit.material.albedo, hit.material.metallic);
+                // MIS 가중치 계산 (구형 광원 기준으로 방향 복원)
+                ShaderLight sl    = g_lights[li];
+                float3 toCenter   = sl.p0 - hit.p;
+                float  d2         = dot(toCenter, toCenter);
+                float  d          = sqrt(d2);
+                float3 wc         = toCenter / d;
+                float  sinTMax2   = sl.radius * sl.radius / d2;
+                float  cosTMax    = sqrt(max(0.0f, 1.0f - sinTMax2));
+                float  cosT       = 1.0f - xiNEE.y * (1.0f - cosTMax);
+                float  sinT       = sqrt(max(0.0f, 1.0f - cosT * cosT));
+                float  phi        = 2.0f * PI * xiNEE.x;
+                float3 up         = abs(wc.y) < 0.999f ? float3(0, 1, 0) : float3(1, 0, 0);
+                float3 T          = normalize(cross(up, wc));
+                float3 B          = cross(wc, T);
+                float3 Lnee       = normalize(T*(cos(phi)*sinT) + B*(sin(phi)*sinT) + wc*cosT);
 
-                // NEE 방향 복원 (SampleDirectLight와 동일한 시드 → 동일한 방향)
-                ShaderLight sl = g_lights[li];
-                float3 toCenter = sl.p0 - hit.p;
-                float  d2       = dot(toCenter, toCenter);
-                float  d        = sqrt(d2);
-                float3 wc       = toCenter / d;
-                float  sinTMax2 = sl.radius * sl.radius / d2;
-                float  cosTMax  = sqrt(max(0.0f, 1.0f - sinTMax2));
-                float  cosT     = 1.0f - xiNEE.y * (1.0f - cosTMax);
-                float  sinT     = sqrt(max(0.0f, 1.0f - cosT * cosT));
-                float  phi      = 2.0f * PI * xiNEE.x;
-                float3 up       = abs(wc.y) < 0.999f ? float3(0, 1, 0) : float3(1, 0, 0);
-                float3 T        = normalize(cross(up, wc));
-                float3 B        = cross(wc, T);
-                float3 Lnee     = normalize(T*(cos(phi)*sinT) + B*(sin(phi)*sinT) + wc*cosT);
+                float  brdfPdf    = ComputeCombinedPDF(N, V, Lnee, hit.material.roughness, lobe);
+                float  w          = PowerHeuristic(lightPdf, brdfPdf);
+                float3 neeContrib = clamp(neeRaw * w * throughput, 0.0f, 50.0f);
 
-                float brdfPdf = ComputeCombinedPDF(N, V, Lnee, hit.material.roughness, lobe);
-                float w       = PowerHeuristic(lightPdf, brdfPdf);
-
-                totalRadiance += clamp(neeRaw * w * throughput, 0.0f, 50.0f);
+                if (bounce == 0) {
+                    // 첫 히트: lobe 가중치로 diffuse/specular 분배
+                    result.diffuse  += neeContrib * lobe.pDiff;
+                    result.specular += neeContrib * lobe.pSpec;
+                } else {
+                    if (pathTypeSet && pathIsSpecular)
+                        result.specular += neeContrib;
+                    else
+                        result.diffuse  += neeContrib;
+                }
             }
         }
 
         // -------------------------------------------------------
-        // 간접광: Lobe Selection (Specular / Diffuse)
+        // 간접광: Lobe Selection
         // -------------------------------------------------------
-        LobeWeights lobe = ComputeLobeWeights(N, V, hit.material.albedo, hit.material.metallic);
-
-        // 로브 선택용 난수
-        float xiLobe = GetRandomFloat(pixelCoord, (uint)bounce + 200u, frameCount);
-
+        float  xiLobe = GetRandomFloat(pixelCoord, (uint)bounce + 200u, frameCount);
         float3 L;
         bool   sampledSpecular;
 
         if (xiLobe < lobe.pSpec) {
-            // === Specular Lobe: GGX 중요도 샘플링 ===
             float2 xiSpec = GetRandomSamples(pixelCoord, (uint)bounce, frameCount);
             float3 H = ImportanceSampleGGX(xiSpec, N, hit.material.roughness);
             L = reflect(-V, H);
             sampledSpecular = true;
         } else {
-            // === Diffuse Lobe: Cosine-weighted 반구 샘플링 ===
             float2 xiDiff = GetRandomSamples(pixelCoord, (uint)bounce + 500u, frameCount);
             L = SampleCosineHemisphere(xiDiff, N);
             sampledSpecular = false;
@@ -169,25 +248,27 @@ float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
         float NdotL = dot(N, L);
         if (NdotL <= 0.0f) break;
 
-        // 전체 BRDF 평가 (lobe selection과 무관하게 항상 full BRDF)
         BRDFResult brdfRes = EvaluateBRDF(N, V, L,
             hit.material.albedo, hit.material.roughness, hit.material.metallic);
         if (all(brdfRes.value <= 0.0f)) break;
 
-        // Combined PDF = pSpec * pdfSpec + pDiff * pdfDiff
         float combinedPdf = ComputeCombinedPDF(N, V, L, hit.material.roughness, lobe);
         if (combinedPdf <= 0.0f) break;
 
-        // Throughput 갱신
         throughput *= brdfRes.value / combinedPdf;
         throughput  = min(throughput, float3(10.0f, 10.0f, 10.0f));
 
-        // 다음 바운스 MIS용 정보 저장
         prevBrdfPdf  = combinedPdf;
         prevSpecular = sampledSpecular && (hit.material.roughness < 0.05f);
 
+        // 첫 간접 바운스에서 경로 채널 결정
+        if (!pathTypeSet) {
+            pathIsSpecular = sampledSpecular;
+            pathTypeSet    = true;
+        }
+
         // -------------------------------------------------------
-        // Russian Roulette (bounce >= 1부터 적용)
+        // Russian Roulette (bounce >= 1)
         // -------------------------------------------------------
         if (bounce >= 1) {
             float pSurvive = clamp(
@@ -202,35 +283,65 @@ float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
         ray.direction = L;
     }
 
-    return totalRadiance;
+    return result;
 }
 
 // -------------------------------------------------------
-// 엔트리 포인트
+// 엔트리 포인트 — per-frame overwrite (누적 없음)
 // -------------------------------------------------------
 [numthreads(16, 16, 1)]
 void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     uint2 pixelCoord = dispatchThreadID.xy;
-    uint screenW, screenH;
-    g_accum.GetDimensions(screenW, screenH);
+    uint  screenW, screenH;
+    g_diffuseRadiance.GetDimensions(screenW, screenH);
     if (pixelCoord.x >= screenW || pixelCoord.y >= screenH) return;
 
     uint frameCount = (uint)g_frameCount;
 
-    float3 newSample = float3(0, 0, 0);
+    float3 diffuse  = float3(0, 0, 0);
+    float3 specular = float3(0, 0, 0);
+
+    TraceResult res;
+    res.diffuse    = float3(0, 0, 0);
+    res.specular   = float3(0, 0, 0);
+    res.hitT       = NRD_HIT_T_MAX;
+    res.normal     = float3(0, 1, 0);
+    res.roughness  = 1.0f;
+    res.albedo     = float3(0, 0, 0);
+    res.metalness  = 0.0f;
+    res.emissive   = float3(0, 0, 0);
+    res.viewZ      = NRD_HIT_T_MAX;
+    res.hitSurface = false;
+
     for (int s = 0; s < SAMPLES_PER_PIXEL; ++s) {
         uint sampleSeed = frameCount * (uint)SAMPLES_PER_PIXEL + (uint)s;
         Ray  ray        = GenerateCameraRay(pixelCoord, uint2(screenW, screenH), sampleSeed);
-        float3 s_val    = TracePath(ray, pixelCoord, sampleSeed);
-        if (!any(isnan(s_val)) && !any(isinf(s_val)))
-            newSample += clamp(s_val, 0.0f, 10.0f);
-    }
-    newSample /= (float)SAMPLES_PER_PIXEL;
+        TraceResult r   = TracePath(ray, pixelCoord, sampleSeed);
 
-    // 누적만 수행 — 톤맵핑은 ToneMapCS에서
-    if (frameCount == 0u) {
-        g_accum[pixelCoord] = float4(newSample, 1.0f);
-    } else {
-        g_accum[pixelCoord] += float4(newSample, 0.0f);
+        if (!any(isnan(r.diffuse))  && !any(isinf(r.diffuse)))
+            diffuse  += clamp(r.diffuse,  0.0f, 10.0f);
+        if (!any(isnan(r.specular)) && !any(isinf(r.specular)))
+            specular += clamp(r.specular, 0.0f, 10.0f);
+
+        if (s == 0) res = r; // G-buffer는 첫 번째 샘플 기준
     }
+    diffuse  /= (float)SAMPLES_PER_PIXEL;
+    specular /= (float)SAMPLES_PER_PIXEL;
+
+    // -------------------------------------------------------
+    // G-buffer 출력 (per-frame overwrite)
+    // -------------------------------------------------------
+    g_diffuseRadiance[pixelCoord]  = float4(diffuse,  res.hitT);
+    g_specularRadiance[pixelCoord] = float4(specular, res.hitT);
+
+    g_viewZ[pixelCoord] = res.hitSurface ? res.viewZ : NRD_HIT_T_MAX;
+
+    float2 octN = OctahedralEncode(res.normal);
+    g_normalRoughness[pixelCoord] = float4(octN.x, octN.y, res.roughness, 1.0f);
+
+    // TODO(Phase 0 [X]): prevViewProj 추가 후 실제 motion vector 계산
+    g_motionVector[pixelCoord] = float2(0.0f, 0.0f);
+
+    g_baseColorMetalness[pixelCoord] = float4(res.albedo, res.metalness);
+    g_emissive[pixelCoord]           = float4(res.emissive, 1.0f);
 }

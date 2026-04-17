@@ -1,7 +1,5 @@
-cbuffer ToneMapCB : register(b0) {
-    uint   g_toneMapFrameCount;
-    uint3  _tmPad;
-};
+// Tonemap.hlsl — Phase 0: /(frameCount+1) 나눗셈 제거
+// 입력은 Composite.hlsl 출력 예정 (현재 스텁: t10 유지)
 
 Texture2D<float4>         g_hdrInput  : register(t10);
 RWTexture2D<unorm float4> g_ldrOutput : register(u1);
@@ -18,15 +16,10 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     g_ldrOutput.GetDimensions(w, h);
     if (id.x >= w || id.y >= h) return;
 
-    float3 accum = g_hdrInput[id.xy].rgb;
-    float3 hdr   = accum / max((float)(g_toneMapFrameCount + 1u), 1.0f);
+    float3 hdr = g_hdrInput[id.xy].rgb; // Composite 출력 (per-frame, 나눗셈 불필요)
 
-    // ACES 톤맵핑 (Reinhard 대비 하이라이트 롤오프가 자연스럽고 색감 보존이 좋음)
     float3 ldr = ACESFilm(hdr);
-
-    // 감마 보정
     ldr = pow(saturate(ldr), 1.0f / 2.2f);
 
     g_ldrOutput[id.xy] = float4(ldr, 1.0f);
 }
-

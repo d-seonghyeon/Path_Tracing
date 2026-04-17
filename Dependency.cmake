@@ -77,6 +77,9 @@ ExternalProject_Add(
         -DASSIMP_INJECT_DEBUG_POSTFIX=OFF
         -DBUILD_SHARED_LIBS=OFF
         -DASSIMP_WARNINGS_AS_ERRORS=OFF
+        # [FIX] static(lib) + Debug 조합에서 존재하지 않는 링커 PDB를 install 하려다
+        #       cmake_install.cmake:148 에서 실패하는 assimp 5.3.1 버그 회피
+        -DASSIMP_INSTALL_PDB=OFF
     # VS 멀티-config: 외부 빌드 구성 무시, Release 고정
     BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> --config Debug
     INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Debug --target install
