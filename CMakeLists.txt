@@ -6,6 +6,7 @@ set(PROJECT_NAME PT_Object_Loading)
 project(${PROJECT_NAME})
 
 set(CMAKE_CXX_STANDARD 17)
+option(PT_ENABLE_NRD "Enable NVIDIA NRD integration when local source/install is available." ON)
 
 # [중요] 모든 라이브러리를 Debug용(MDd)으로 통일
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebugDLL")
@@ -66,6 +67,7 @@ add_executable(${PROJECT_NAME}
     src/model.h            src/model.cpp
     src/gltf_loader.h      src/gltf_loader.cpp
     src/bvh.h              src/bvh.cpp
+    src/nrd_denoiser.h     src/nrd_denoiser.cpp
     src/scene_desc.h       src/scene_desc.cpp
     ${SHADER_SOURCES}
 )
@@ -75,14 +77,15 @@ set_source_files_properties(${SHADER_SOURCES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # 6. 라이브러리 및 설정 (Dependency.cmake 포함)
 include(Dependency.cmake)
-target_include_directories(${PROJECT_NAME} PUBLIC ${DEP_INCLUDE_DIR})
-target_link_directories(${PROJECT_NAME}    PUBLIC ${DEP_LIB_DIR})
+target_include_directories(${PROJECT_NAME} PUBLIC ${DEP_INCLUDE_DIR} ${DEP_NRD_INCLUDE_DIRS})
+target_link_directories(${PROJECT_NAME}    PUBLIC ${DEP_LIB_DIR} ${DEP_NRD_LIB_DIRS})
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     WINDOW_NAME=\"PT_Object_Loading\"
     WINDOW_WIDTH=960
     WINDOW_HEIGHT=540
     _ITERATOR_DEBUG_LEVEL=2  # Assimp Debug 빌드와 일치
+    PT_ENABLE_NRD=$<BOOL:${PT_ENABLE_NRD}>
 )
 
 set(DX_LIBS d3d11.lib dxgi.lib d3dcompiler.lib)

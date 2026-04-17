@@ -2,6 +2,12 @@ include(ExternalProject)
 set(DEP_INSTALL_DIR ${PROJECT_BINARY_DIR}/install)
 set(DEP_INCLUDE_DIR ${DEP_INSTALL_DIR}/include)
 set(DEP_LIB_DIR ${DEP_INSTALL_DIR}/lib)
+set(DEP_NRD_INCLUDE_DIRS "")
+set(DEP_NRD_LIB_DIRS "")
+
+set(NRD_LOCAL_SOURCE_DIR "${PROJECT_BINARY_DIR}/dep_nrd-prefix/src/dep_nrd")
+set(NRD_LOCAL_HEADER_DIR "${DEP_INSTALL_DIR}/include/nrd")
+set(NRD_LOCAL_HEADER "${NRD_LOCAL_HEADER_DIR}/NRD.h")
 
 # 1. spdlog
 ExternalProject_Add(
@@ -106,5 +112,37 @@ ExternalProject_Add(
         ${DEP_INSTALL_DIR}/include/json.hpp
 )
 set(DEP_LIST ${DEP_LIST} dep_tinygltf)
+
+# 6. NRD (NVIDIA Real-time Denoisers)
+# 오프라인 워크플로를 깨지 않기 위해, 로컬에 NRD 소스/설치가 없으면 자동 비활성화한다.
+if(PT_ENABLE_NRD AND NOT EXISTS "${NRD_LOCAL_SOURCE_DIR}/CMakeLists.txt" AND NOT EXISTS "${NRD_LOCAL_HEADER}")
+    message(STATUS "PT_ENABLE_NRD=ON but no local NRD source/install was found. Disabling NRD for this configure step.")
+    set(PT_ENABLE_NRD OFF)
+endif()
+
+if(PT_ENABLE_NRD)
+    ExternalProject_Add(
+        dep_nrd
+        GIT_REPOSITORY "https://github.com/NVIDIAGameWorks/RayTracingDenoiser.git"
+        GIT_TAG "v4.13.3"
+        GIT_SHALLOW 1
+        UPDATE_DISCONNECTED 1
+        CMAKE_ARGS
+            -DCMAKE_INSTALL_PREFIX=${DEP_INSTALL_DIR}
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebugDLL
+            -DNRD_STATIC_LIBRARY=ON
+            -DNRD_EMBEDS_DXBC_SHADERS=ON
+            -DNRD_EMBEDS_DXIL_SHADERS=OFF
+            -DNRD_EMBEDS_SPIRV_SHADERS=OFF
+            -DNRD_DISABLE_INTERPROCEDURAL_OPTIMIZATION=ON
+            -DNRD_USE_PRECOMPILED_SHADERS=ON
+        BUILD_COMMAND   ${CMAKE_COMMAND} --build <BINARY_DIR> --config Debug
+        INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Debug --target install
+    )
+    set(DEP_LIBS ${DEP_LIBS} NRD)
+    set(DEP_LIST ${DEP_LIST} dep_nrd)
+    set(DEP_NRD_INCLUDE_DIRS ${NRD_LOCAL_HEADER_DIR} ${NRD_LOCAL_HEADER_DIR}/Shaders)
+    set(DEP_NRD_LIB_DIRS ${DEP_LIB_DIR})
+endif()
 
 add_dependencies(${PROJECT_NAME} ${DEP_LIST})
