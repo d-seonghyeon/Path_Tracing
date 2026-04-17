@@ -6,7 +6,7 @@
 //   2. TracePath → diffuse / specular 분리 반환 (TraceResult)
 //   3. 7개 G-buffer UAV (u0~u6) 출력: diffuse, specular, viewZ,
 //      normalRoughness, motionVector, baseColorMetalness, emissive
-//   4. motionVector는 prevViewProj 미추가로 현재 0 출력 (Phase 0 [X] 대기)
+//   4. motionVector는 first-hit worldPos + prev/curr viewProj로 계산
 // -------------------------------------------------------
 
 cbuffer GlobalUB : register(b0) {
@@ -18,6 +18,8 @@ cbuffer GlobalUB : register(b0) {
     float  g_frameCount;
     float3 g_cameraRight;
     uint   g_lightCount;
+    row_major float4x4 g_prevViewProj;
+    row_major float4x4 g_currViewProj;
 };
 #include "Utility.hlsli"
 #include "BRDF.hlsli"
@@ -53,6 +55,7 @@ struct TraceResult {
     float3 emissive;
     float  viewZ;       // linear view-space Z (양수)
     bool   hitSurface;  // 카메라 레이가 표면에 맞았는지
+    float3 worldPos;    // 첫 번째 히트 지점 (motion vector 계산용)
 };
 
 // -------------------------------------------------------
@@ -71,6 +74,12 @@ float2 OctahedralEncode(float3 n) {
         uv = (1.0f - abs(float2(n.y, n.x))) * float2(signX, signY);
     }
     return uv * 0.5f + 0.5f;
+}
+
+float2 ClipToPixel(float4 clipPos, uint2 screenSize) {
+    float2 ndc = clipPos.xy / clipPos.w;
+    float2 uv  = float2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f);
+    return uv * float2(screenSize);
 }
 
 // -------------------------------------------------------
@@ -116,6 +125,7 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
     result.emissive   = float3(0, 0, 0);
     result.viewZ      = NRD_HIT_T_MAX;
     result.hitSurface = false;
+    result.worldPos   = float3(0, 0, 0);
 
     float3 throughput    = float3(1, 1, 1);
     float  prevBrdfPdf   = 0.0f;
@@ -147,6 +157,7 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
             result.albedo     = hit.material.albedo;
             result.metalness  = hit.material.metallic;
             result.emissive   = hit.material.emissive;
+            result.worldPos   = hit.p;
             // viewZ: 카메라 전방으로의 선형 투영 (RH, 양수 = 전방)
             result.viewZ      = dot(hit.p - g_cameraPos, g_cameraFront);
             result.hitSurface = true;
@@ -339,8 +350,17 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     float2 octN = OctahedralEncode(res.normal);
     g_normalRoughness[pixelCoord] = float4(octN.x, octN.y, res.roughness, 1.0f);
 
-    // TODO(Phase 0 [X]): prevViewProj 추가 후 실제 motion vector 계산
-    g_motionVector[pixelCoord] = float2(0.0f, 0.0f);
+    float2 motionVector = float2(0.0f, 0.0f);
+    if (res.hitSurface) {
+        float4 currClip = mul(g_currViewProj, float4(res.worldPos, 1.0f));
+        float4 prevClip = mul(g_prevViewProj, float4(res.worldPos, 1.0f));
+        if (currClip.w > 1e-6f && prevClip.w > 1e-6f) {
+            float2 currPixel = ClipToPixel(currClip, uint2(screenW, screenH));
+            float2 prevPixel = ClipToPixel(prevClip, uint2(screenW, screenH));
+            motionVector = prevPixel - currPixel;
+        }
+    }
+    g_motionVector[pixelCoord] = motionVector;
 
     g_baseColorMetalness[pixelCoord] = float4(res.albedo, res.metalness);
     g_emissive[pixelCoord]           = float4(res.emissive, 1.0f);

@@ -23,6 +23,8 @@ struct GlobalUniforms {
     float     frameCount;
     glm::vec3 cameraRight;
     uint32_t  lightCount;
+    glm::mat4 prevViewProj;
+    glm::mat4 currViewProj;
 };
 
 // -------------------------------------------------------
@@ -50,6 +52,7 @@ private:
 
     // --- Compute Programs ---
     ComputeProgramUPtr m_pathTracerProgram;
+    ComputeProgramUPtr m_compositeProgram;
     ComputeProgramUPtr m_toneMapProgram;    // [추가] 톤맵 전용 프로그램
 
     // 출력 텍스처 (LDR 표시용)
@@ -57,10 +60,39 @@ private:
     ComPtr<ID3D11UnorderedAccessView> m_outputUAV;
     ComPtr<ID3D11ShaderResourceView>  m_outputSRV;
 
-    // 누적 버퍼 (HDR 합산용)
-    ComPtr<ID3D11Texture2D>           m_accumTexture;
-    ComPtr<ID3D11UnorderedAccessView> m_accumUAV;
-    ComPtr<ID3D11ShaderResourceView>  m_accumSRV;
+    // HDR 합성 버퍼 (Composite 결과)
+    ComPtr<ID3D11Texture2D>           m_compositeTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_compositeUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_compositeSRV;
+
+    // PathTracer G-buffer (Phase 0)
+    ComPtr<ID3D11Texture2D>           m_diffuseRadianceTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_diffuseRadianceUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_diffuseRadianceSRV;
+
+    ComPtr<ID3D11Texture2D>           m_specularRadianceTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_specularRadianceUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_specularRadianceSRV;
+
+    ComPtr<ID3D11Texture2D>           m_viewZTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_viewZUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_viewZSRV;
+
+    ComPtr<ID3D11Texture2D>           m_normalRoughnessTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_normalRoughnessUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_normalRoughnessSRV;
+
+    ComPtr<ID3D11Texture2D>           m_motionVectorTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_motionVectorUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_motionVectorSRV;
+
+    ComPtr<ID3D11Texture2D>           m_baseColorMetalnessTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_baseColorMetalnessUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_baseColorMetalnessSRV;
+
+    ComPtr<ID3D11Texture2D>           m_emissiveTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_emissiveUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_emissiveSRV;
 
     // --- Scene Data ---
     ModelUPtr m_model;
@@ -97,6 +129,7 @@ private:
     float m_cameraSpeed      = 5.0f;
     float m_mouseSensitivity = 0.1f;
     uint32_t m_frameCount = 0;
+    glm::mat4 m_prevViewProj { 1.0f };
 };
 
 #endif

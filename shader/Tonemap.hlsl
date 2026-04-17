@@ -1,5 +1,5 @@
 // Tonemap.hlsl — Phase 0: /(frameCount+1) 나눗셈 제거
-// 입력은 Composite.hlsl 출력 예정 (현재 스텁: t10 유지)
+// 입력은 Composite.hlsl 의 per-frame HDR 출력 (t10)
 
 Texture2D<float4>         g_hdrInput  : register(t10);
 RWTexture2D<unorm float4> g_ldrOutput : register(u1);
