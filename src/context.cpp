@@ -464,9 +464,10 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
 
     // -------------------------------------------------------
     // 패스 2: NRD Denoise — G-buffer → denoised diffuse/specular
+    //   m_denoiseEnabled=false 시 패스 전체 스킵 (A/B 토글 F1).
     //   NRD SDK 미연결 시 G-buffer를 denoised 텍스처로 그대로 복사(stub).
     // -------------------------------------------------------
-    {
+    if (m_denoiseEnabled) {
         NrdGBufferInputs nrdIn = {};
         nrdIn.diffuseRadiance  = m_diffuseRadianceSRV.Get();
         nrdIn.specularRadiance = m_specularRadianceSRV.Get();
@@ -482,12 +483,21 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     // -------------------------------------------------------
-    // 패스 3: Composite — denoised diffuse * albedo + specular + emissive
+    // 패스 3: Composite — (denoised or raw) diffuse * albedo + specular + emissive
+    //   m_denoiseEnabled=true  → denoised 텍스처 (NRD 출력 또는 stub 복사본)
+    //   m_denoiseEnabled=false → 원본 G-buffer 직접 사용 (A/B 레퍼런스)
     // -------------------------------------------------------
     {
+        ID3D11ShaderResourceView* diffSRV = m_denoiseEnabled
+            ? m_denoisedDiffuseSRV.Get()
+            : m_diffuseRadianceSRV.Get();
+        ID3D11ShaderResourceView* specSRV = m_denoiseEnabled
+            ? m_denoisedSpecularSRV.Get()
+            : m_specularRadianceSRV.Get();
+
         ID3D11ShaderResourceView *compSRVs[4] = {
-            m_denoisedDiffuseSRV.Get(),    // t0: denoised diffuse (NRD 연결 후 NRD 출력)
-            m_denoisedSpecularSRV.Get(),   // t1: denoised specular
+            diffSRV,                       // t0: diffuse
+            specSRV,                       // t1: specular
             m_baseColorMetalnessSRV.Get(), // t2: albedo/metalness
             m_emissiveSRV.Get(),           // t3: emissive
         };
@@ -569,6 +579,12 @@ void Context::ProcessKeyboard(float deltaTime) {
     if (GetAsyncKeyState('D') & 0x8000) { m_cameraPos += right * speed;          moved = true; }
     if (GetAsyncKeyState('E') & 0x8000) { m_cameraPos += m_cameraUp * speed;     moved = true; }
     if (GetAsyncKeyState('Q') & 0x8000) { m_cameraPos -= m_cameraUp * speed;     moved = true; }
+
+    // F1: A/B 토글 — denoise on/off (하위 비트 = 이번 호출 전까지 눌렸는지 여부)
+    if (GetAsyncKeyState(VK_F1) & 0x0001) {
+        m_denoiseEnabled = !m_denoiseEnabled;
+        SPDLOG_INFO("Denoise {}", m_denoiseEnabled ? "ON" : "OFF (raw G-buffer)");
+    }
 
     if (moved) {
         m_frameCount = 0;

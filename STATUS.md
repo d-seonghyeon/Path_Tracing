@@ -8,8 +8,8 @@
 
 ## 0. 현재 단계
 
-- **활성 단계**: `Phase 2 — NrdDenoiser 래퍼 + 4-pass 렌더 구조`
-- **상세 서브 단계**: `P2-0 · review fixes + 4-pass scaffold (PT→NRD stub→Composite→ToneMap)`
+- **활성 단계**: `Phase 4 — 검증 · A/B (일부 선행 구현)`
+- **상세 서브 단계**: `P4-0 · A/B 토글 완료 / Phase 2 Codex wiring 대기 중`
 - **차단(block) 상태**: 없음
 - **브랜치**: `feature/nrd-phase0`
 
@@ -58,11 +58,11 @@ Phase 4 — 검증 · A/B
 
 | 항목 | 값 |
 | --- | --- |
-| Hash | `4e641b2` (P1) + untracked P2 working changes |
+| Hash | (이번 커밋 후 갱신) |
 | Author | Claude Code |
 | Date | 2026-04-18 |
-| Scope | `P2-0` review fixes + 4-pass render scaffold |
-| 요약 | R10G10B10A2 UAV 버그 수정, ToneMap 데드 cbuffer 제거, `NrdDenoiser::Denoise()` 인터페이스 추가, PT→NRD→Composite→ToneMap 4-pass 구조 완성 |
+| Scope | `P4-0` A/B 토글 (F1 = denoise on/off) |
+| 요약 | `m_denoiseEnabled` + F1 토글, NRD 패스 조건부 스킵, Composite가 raw G-buffer 또는 denoised 텍스처 선택 |
 
 > 매 세션 종료 시 `git log -1 --pretty=format:"%h %an %ad %s"` 결과를 여기에 붙여 넣는다.
 
@@ -80,7 +80,7 @@ Phase 4 — 검증 · A/B
 ```
 
 담당: Codex (NRD SDK 실제 wiring).
-Claude 는 DX11 slot 충돌·리소스 수명 리뷰 완료. 4-pass scaffold 구현 완료.
+Claude 완료: Phase 2 리뷰 + 4-pass scaffold + Phase 4 A/B 토글(F1).
 
 ---
 
@@ -134,6 +134,7 @@ Claude 는 DX11 slot 충돌·리소스 수명 리뷰 완료. 4-pass scaffold 구
 > `YYYY-MM-DD HH:MM  |  <tool>  |  <phase>  |  <요약 1줄>`
 
 ```
+2026-04-18        |  Claude Code |  P4-0  |  A/B 토글 F1 구현 (m_denoiseEnabled, NRD 패스 조건부 스킵, Composite 입력 선택), 빌드 성공
 2026-04-18        |  Claude Code |  P2-0  |  리뷰 fixes (R10G10B10A2→R16F4, dead cbuffer), NrdDenoiser Denoise() 인터페이스, 4-pass scaffold, 빌드 성공
 2026-04-17 21:11  |  Codex       |  P1-0  |  dep_nrd 오프라인 안전형 추가, PT_ENABLE_NRD 옵션 도입, nrd_denoiser 스캐폴드 및 외부 빌드 성공
 2026-04-17 20:02  |  Codex       |  P0-1  |  G-buffer 7종, prev/curr viewProj, motion vector, Composite 3-pass 연결 후 clean-env 빌드 성공

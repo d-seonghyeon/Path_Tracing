@@ -134,6 +134,9 @@ private:
     float m_mouseSensitivity = 0.1f;
     uint32_t m_frameCount = 0;
     glm::mat4 m_prevViewProj { 1.0f };
+
+    // A/B 토글 — F1 로 denoise on/off (Phase 4)
+    bool m_denoiseEnabled { true };
 };
 
 #endif
