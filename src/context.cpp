@@ -104,11 +104,9 @@ bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
         nullptr, sizeof(GlobalUniforms), 1);
     if (!m_globalBuffer) return false;
 
-    // 5. 톤맵 상수 버퍼
-    m_toneMapBuffer = Buffer::CreateWithData(
-        device, D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC,
-        nullptr, sizeof(ToneMapUniforms), 1);
-    if (!m_toneMapBuffer) return false;
+    // 5. NrdDenoiser (Phase 2 — NRD SDK 미설치 시 stub으로 동작)
+    m_nrdDenoiser = NrdDenoiser::Create(device, WINDOW_WIDTH, WINDOW_HEIGHT);
+    if (!m_nrdDenoiser) return false;
 
     // 6. 모델 (절차적 씬 사용)
     m_model = nullptr;
@@ -276,6 +274,12 @@ void Context::OnResize(ID3D11Device *device, uint32_t width, uint32_t height) {
     m_emissiveUAV.Reset();
     m_emissiveSRV.Reset();
     m_emissiveTexture.Reset();
+    m_denoisedDiffuseUAV.Reset();
+    m_denoisedDiffuseSRV.Reset();
+    m_denoisedDiffuseTexture.Reset();
+    m_denoisedSpecularUAV.Reset();
+    m_denoisedSpecularSRV.Reset();
+    m_denoisedSpecularTexture.Reset();
 
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width            = width;
@@ -340,7 +344,7 @@ void Context::OnResize(ID3D11Device *device, uint32_t width, uint32_t height) {
     }
 
     if (!createScreenTexture(
-            DXGI_FORMAT_R10G10B10A2_UNORM,
+            DXGI_FORMAT_R16G16B16A16_FLOAT,
             m_normalRoughnessTexture, m_normalRoughnessUAV, m_normalRoughnessSRV, "normal roughness")) {
         return;
     }
@@ -365,9 +369,24 @@ void Context::OnResize(ID3D11Device *device, uint32_t width, uint32_t height) {
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
+            m_denoisedDiffuseTexture, m_denoisedDiffuseUAV, m_denoisedDiffuseSRV, "denoised diffuse")) {
+        return;
+    }
+
+    if (!createScreenTexture(
+            DXGI_FORMAT_R16G16B16A16_FLOAT,
+            m_denoisedSpecularTexture, m_denoisedSpecularUAV, m_denoisedSpecularSRV, "denoised specular")) {
+        return;
+    }
+
+    if (!createScreenTexture(
+            DXGI_FORMAT_R16G16B16A16_FLOAT,
             m_compositeTexture, m_compositeUAV, m_compositeSRV, "composite")) {
         return;
     }
+
+    if (m_nrdDenoiser)
+        m_nrdDenoiser->OnResize(device, width, height);
 
     m_frameCount = 0;
 }
@@ -444,14 +463,33 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     // -------------------------------------------------------
-    // 패스 2: Composite — diffuse * albedo + specular + emissive
+    // 패스 2: NRD Denoise — G-buffer → denoised diffuse/specular
+    //   NRD SDK 미연결 시 G-buffer를 denoised 텍스처로 그대로 복사(stub).
+    // -------------------------------------------------------
+    {
+        NrdGBufferInputs nrdIn = {};
+        nrdIn.diffuseRadiance  = m_diffuseRadianceSRV.Get();
+        nrdIn.specularRadiance = m_specularRadianceSRV.Get();
+        nrdIn.viewZ            = m_viewZSRV.Get();
+        nrdIn.normalRoughness  = m_normalRoughnessSRV.Get();
+        nrdIn.motionVector     = m_motionVectorSRV.Get();
+
+        NrdDenoisedOutputs nrdOut = {};
+        nrdOut.diffuse  = m_denoisedDiffuseUAV.Get();
+        nrdOut.specular = m_denoisedSpecularUAV.Get();
+
+        m_nrdDenoiser->Denoise(context, nrdIn, nrdOut, m_frameCount);
+    }
+
+    // -------------------------------------------------------
+    // 패스 3: Composite — denoised diffuse * albedo + specular + emissive
     // -------------------------------------------------------
     {
         ID3D11ShaderResourceView *compSRVs[4] = {
-            m_diffuseRadianceSRV.Get(),
-            m_specularRadianceSRV.Get(),
-            m_baseColorMetalnessSRV.Get(),
-            m_emissiveSRV.Get(),
+            m_denoisedDiffuseSRV.Get(),    // t0: denoised diffuse (NRD 연결 후 NRD 출력)
+            m_denoisedSpecularSRV.Get(),   // t1: denoised specular
+            m_baseColorMetalnessSRV.Get(), // t2: albedo/metalness
+            m_emissiveSRV.Get(),           // t3: emissive
         };
         context->CSSetShaderResources(0, 4, compSRVs);
 
@@ -472,15 +510,6 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     // 패스 3: ToneMap — Composite HDR → LDR 출력
     // -------------------------------------------------------
     {
-        // b0: ToneMap 상수 버퍼
-        ToneMapUniforms tmData;
-        tmData.frameCount = m_frameCount;
-        tmData.pad[0] = tmData.pad[1] = tmData.pad[2] = 0;
-        m_toneMapBuffer->UpdateData(context, tmData);
-
-        auto tmBuf = m_toneMapBuffer->GetBuffer();
-        context->CSSetConstantBuffers(0, 1, &tmBuf);
-
         // t10: Composite 결과를 SRV로 읽기
         ID3D11ShaderResourceView *tmSRVs[1] = { m_compositeSRV.Get() };
         context->CSSetShaderResources(10, 1, tmSRVs);
@@ -521,6 +550,7 @@ void Context::ProcessMouseMenu(float dx, float dy) {
     m_pitch -= dy * m_mouseSensitivity;
     m_pitch  = glm::clamp(m_pitch, -89.0f, 89.0f);
     m_frameCount = 0;
+    if (m_nrdDenoiser) m_nrdDenoiser->ResetHistory();
 }
 
 void Context::ProcessKeyboard(float deltaTime) {
@@ -540,6 +570,8 @@ void Context::ProcessKeyboard(float deltaTime) {
     if (GetAsyncKeyState('E') & 0x8000) { m_cameraPos += m_cameraUp * speed;     moved = true; }
     if (GetAsyncKeyState('Q') & 0x8000) { m_cameraPos -= m_cameraUp * speed;     moved = true; }
 
-    if (moved)
+    if (moved) {
         m_frameCount = 0;
+        if (m_nrdDenoiser) m_nrdDenoiser->ResetHistory();
+    }
 }

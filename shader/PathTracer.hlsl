@@ -31,7 +31,7 @@ cbuffer GlobalUB : register(b0) {
 RWTexture2D<float4>       g_diffuseRadiance    : register(u0); // .rgb=diffuse, .a=hitT
 RWTexture2D<float4>       g_specularRadiance   : register(u1); // .rgb=specular, .a=hitT
 RWTexture2D<float>        g_viewZ              : register(u2); // linear view-space Z (양수, 전방)
-RWTexture2D<unorm float4> g_normalRoughness    : register(u3); // .rg=octa-packed N, .b=roughness
+RWTexture2D<float4>       g_normalRoughness    : register(u3); // .rg=octa-packed N, .b=roughness
 RWTexture2D<float2>       g_motionVector       : register(u4); // 픽셀 단위 (prev-curr)
 RWTexture2D<unorm float4> g_baseColorMetalness : register(u5); // .rgb=albedo, .a=metalness
 RWTexture2D<float4>       g_emissive           : register(u6); // .rgb=emissive

@@ -10,6 +10,7 @@
 #include "model.h"
 #include "bvh.h"
 #include "scene_desc.h"
+#include "nrd_denoiser.h"
 
 // -------------------------------------------------------
 // GPU 상수 버퍼 - 카메라 파라미터 (PathTracer cbuffer b0)
@@ -25,14 +26,6 @@ struct GlobalUniforms {
     uint32_t  lightCount;
     glm::mat4 prevViewProj;
     glm::mat4 currViewProj;
-};
-
-// -------------------------------------------------------
-// ToneMap 상수 버퍼 (ToneMapCS cbuffer b0)
-// -------------------------------------------------------
-struct ToneMapUniforms {
-    uint32_t frameCount;
-    uint32_t pad[3];
 };
 
 CLASS_PTR(Context)
@@ -94,6 +87,18 @@ private:
     ComPtr<ID3D11UnorderedAccessView> m_emissiveUAV;
     ComPtr<ID3D11ShaderResourceView>  m_emissiveSRV;
 
+    // NRD denoised 출력 (Composite 패스 입력 — NRD stub 시 G-buffer 복사본)
+    ComPtr<ID3D11Texture2D>           m_denoisedDiffuseTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_denoisedDiffuseUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_denoisedDiffuseSRV;
+
+    ComPtr<ID3D11Texture2D>           m_denoisedSpecularTexture;
+    ComPtr<ID3D11UnorderedAccessView> m_denoisedSpecularUAV;
+    ComPtr<ID3D11ShaderResourceView>  m_denoisedSpecularSRV;
+
+    // NRD denoiser (Phase 2)
+    NrdDenoiserUPtr m_nrdDenoiser;
+
     // --- Scene Data ---
     ModelUPtr m_model;
 
@@ -118,7 +123,6 @@ private:
 
     // 상수 버퍼
     BufferUPtr m_globalBuffer;
-    BufferUPtr m_toneMapBuffer;    // [추가] 톤맵 상수 버퍼
 
     // --- Camera State ---
     glm::vec3 m_cameraPos   { 0.0f, 2.5f, -6.0f };

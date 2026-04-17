@@ -84,7 +84,7 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 | `u0` | `g_diffuseRadiance` | `R16G16B16A16_FLOAT` | .rgb = diffuse, .a = hitT |
 | `u1` | `g_specularRadiance` | `R16G16B16A16_FLOAT` | .rgb = specular, .a = hitT |
 | `u2` | `g_viewZ` | `R32_FLOAT` | linear view-space Z (양수, 전방) |
-| `u3` | `g_normalRoughness` | `R10G10B10A2_UNORM` | octa-packed N + roughness |
+| `u3` | `g_normalRoughness` | `R16G16B16A16_FLOAT` | octa-packed N (.rg) + roughness (.b) |
 | `u4` | `g_motionVector` | `R16G16_FLOAT` | 픽셀 단위 (prev − curr) |
 | `u5` | `g_baseColorMetalness` | `R8G8B8A8_UNORM` | .rgb=albedo, .a=metalness |
 | `u6` | `g_emissive` | `R11G11B10_FLOAT` | composite 단계에서 재사용 |

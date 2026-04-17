@@ -8,8 +8,8 @@
 
 ## 0. 현재 단계
 
-- **활성 단계**: `Phase 1 — NRD 의존성 / 스캐폴드 착수`
-- **상세 서브 단계**: `P1-0 · dep_nrd CMake wiring + offline-safe stub scaffold`
+- **활성 단계**: `Phase 2 — NrdDenoiser 래퍼 + 4-pass 렌더 구조`
+- **상세 서브 단계**: `P2-0 · review fixes + 4-pass scaffold (PT→NRD stub→Composite→ToneMap)`
 - **차단(block) 상태**: 없음
 - **브랜치**: `feature/nrd-phase0`
 
@@ -58,11 +58,11 @@ Phase 4 — 검증 · A/B
 
 | 항목 | 값 |
 | --- | --- |
-| Hash | `(이 세션의 P1 커밋 직후 갱신 예정)` |
-| Author | Codex |
-| Date | 2026-04-17 |
-| Scope | `P1` NRD 의존성 시작 — CMake wiring + `NrdDenoiser` 스텁 |
-| 요약 | `dep_nrd` 오프라인 안전형 추가와 `src/nrd_denoiser.{h,cpp}` 스캐폴드 도입 |
+| Hash | `4e641b2` (P1) + untracked P2 working changes |
+| Author | Claude Code |
+| Date | 2026-04-18 |
+| Scope | `P2-0` review fixes + 4-pass render scaffold |
+| 요약 | R10G10B10A2 UAV 버그 수정, ToneMap 데드 cbuffer 제거, `NrdDenoiser::Denoise()` 인터페이스 추가, PT→NRD→Composite→ToneMap 4-pass 구조 완성 |
 
 > 매 세션 종료 시 `git log -1 --pretty=format:"%h %an %ad %s"` 결과를 여기에 붙여 넣는다.
 
@@ -73,13 +73,14 @@ Phase 4 — 검증 · A/B
 **지금 해야 할 한 가지만 적는다.** 애매한 "계속 진행" 금지.
 
 ```
-[1] Phase 2 시작: `NrdDenoiser` 내부에 NRD instance / denoiser desc 생성 경로 추가
-[2] NRD permanent / transient resource pool 설계 및 DXGI 포맷 매핑 테이블 도입
-[3] `context.cpp::Render` 를 PT → NRD → Composite → Tonemap 4-pass로 확장
+[1] NRD SDK (v4.13.3) 로컬 설치 후 PT_ENABLE_NRD=ON 빌드 테스트
+[2] NrdDenoiser::Init 내부에 nrd::InstanceCreationDesc + nrd::CreateInstance 실제 연결
+[3] NrdDenoiser::Denoise 내부에 nrd::GetComputeDispatches → ID3D11ComputeShader dispatch 루프
+[4] permanent / transient resource pool (DXGI 포맷 매핑 테이블) 설계
 ```
 
-담당: Codex.
-Claude 는 이번 CMake / scaffold diff 를 리뷰하고 slot·리소스 수명 충돌을 점검.
+담당: Codex (NRD SDK 실제 wiring).
+Claude 는 DX11 slot 충돌·리소스 수명 리뷰 완료. 4-pass scaffold 구현 완료.
 
 ---
 
@@ -92,9 +93,11 @@ Claude 는 이번 CMake / scaffold diff 를 리뷰하고 slot·리소스 수명 
 
 - `shader/Composite.hlsl` — `diffuse * albedo + specular + emissive` 합성 CS 패스
 - `GlobalUniforms.prevViewProj` / `currViewProj` — motion vector 계산용 view-proj 행렬
-- `Context` 화면 리소스: G-buffer 7종 + `m_compositeTexture`
+- `Context` 화면 리소스: G-buffer 7종 + `m_compositeTexture` + `m_denoisedDiffuse/Specular` (NRD 출력)
 - `PT_ENABLE_NRD` — 로컬 NRD 소스/설치가 있을 때만 켜지는 CMake 옵션
-- `src/nrd_denoiser.{h,cpp}` — NRI 없는 DX11 NRD 경로용 스텁 클래스
+- `src/nrd_denoiser.{h,cpp}` — NRI 없는 DX11 NRD 경로용 래퍼 (`Denoise()` 인터페이스 포함)
+- `NrdGBufferInputs` / `NrdDenoisedOutputs` — Denoise 호출 시 G-buffer SRV/UAV 묶음 구조체
+- 렌더 패스: PT → NRD(stub) → Composite → ToneMap 4-pass 구조 완성
 
 ### 이름이 바뀐 것
 
@@ -131,6 +134,7 @@ Claude 는 이번 CMake / scaffold diff 를 리뷰하고 slot·리소스 수명 
 > `YYYY-MM-DD HH:MM  |  <tool>  |  <phase>  |  <요약 1줄>`
 
 ```
+2026-04-18        |  Claude Code |  P2-0  |  리뷰 fixes (R10G10B10A2→R16F4, dead cbuffer), NrdDenoiser Denoise() 인터페이스, 4-pass scaffold, 빌드 성공
 2026-04-17 21:11  |  Codex       |  P1-0  |  dep_nrd 오프라인 안전형 추가, PT_ENABLE_NRD 옵션 도입, nrd_denoiser 스캐폴드 및 외부 빌드 성공
 2026-04-17 20:02  |  Codex       |  P0-1  |  G-buffer 7종, prev/curr viewProj, motion vector, Composite 3-pass 연결 후 clean-env 빌드 성공
 2026-04-17        |  Claude Code |  P0-0  |  STATUS.md / AGENTS.md 초안 작성
