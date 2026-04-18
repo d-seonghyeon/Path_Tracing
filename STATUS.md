@@ -68,16 +68,26 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Run the app. Wait 4-8s static (camera still), then:
-    a. F2 → capture_N_raw.png        (F1=OFF baseline)
-    b. F1  → denoise ON
-    c. F2 → capture_N_denoised.png   (F1=ON settled)
-    Compare the two PNGs: lower building faces should be warm-amber lit.
-    If raw is still too dark → raise emission or add sky ambient.
-    If denoised looks over-blurred → loosen REBLUR spatial params.
+[1] Codex: diagnose why NRD REBLUR output is all-zero (black) for
+    non-emissive pixels even after 10s warm-up.
+
+    Suspected root causes (in priority order):
+    A. worldToViewMatrix / viewToClipMatrix convention: GLM column-major
+       memcpy'd directly into NRD CommonSettings — confirm NRD v4 expects
+       column-major (no transpose needed).
+    B. normHitDist = 0 for most pixels — confirm REBLUR can still produce
+       non-zero spatial output without valid hit distances.
+    C. YCoCg packing: PathTracer encodes manually with NrdLinearToYCoCg
+       before writing to IN_DIFF/SPEC_RADIANCE_HITDIST — confirm NRD v4
+       expects pre-packed YCoCg (not linear RGB).
+    D. motionVectorScale = 1/screenSize — confirm pixel→UV conversion
+       is correct for NRD v4.14.3 with isMotionVectorInWorldSpace=false.
+
+    Key files: src/nrd_denoiser.cpp, shader/PathTracer.hlsl,
+               shader/NrdFrontend.hlsli
 ```
 
-Owner: user (visual validation required)
+Owner: Codex (root cause analysis + patch)
 
 ---
 
@@ -162,6 +172,8 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-18 | Claude Code | P3-3 | NRD black output bug: confirmed emissive-only pattern persists even after bounce-0 emitter removal; Codex delegated for root-cause analysis (matrix convention / YCoCg / normHitDist / MV scale)
+2026-04-18 | Claude Code | P3-3 | Remove bounce=0 emitter hit from NRD diffuse input (double-counted via g_emissive); also set m_denoiseEnabled default=false; build succeeded (commit 628e352)
 2026-04-18 | Claude Code | P4-1 | Added F2 screenshot capture (stb_image_write, staging readback); `capture_N_raw.png` / `capture_N_denoised.png` saved to CWD; enables Phase 4 FLIP/SSIM offline comparison
 2026-04-18 | Claude Code | P3-2 | Increased street lamp emission 5× (3.5→18.0), window emissives 3×; lower floors should now show visible amber illumination after double-albedo fix
 2026-04-18 | Claude Code | P3-2 | Diagnosed double-albedo root cause: SampleDirectLight already bakes albedo into BRDF output; Composite `diffuse*albedo` was double-multiplying; changed to `diffuse+specular+emissive`; reverted primaryAlbedo demodulation; build succeeded (commit 6187d9a)
