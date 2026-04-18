@@ -23,6 +23,7 @@ cbuffer GlobalUB : register(b0) {
 };
 #include "Utility.hlsli"
 #include "BRDF.hlsli"
+#include "NrdFrontend.hlsli"
 #include "Scene.hlsli"
 
 // -------------------------------------------------------
@@ -38,6 +39,7 @@ RWTexture2D<float4>       g_emissive           : register(u6); // .rgb=emissive
 
 static const int   MAX_BOUNCES       = 6;
 static const int   SAMPLES_PER_PIXEL = 1;
+static const float4 REBLUR_HIT_DIST_PARAMS = float4(3.0f, 0.1f, 20.0f, -25.0f);
 static const float NRD_HIT_T_MAX     = 1e16f; // 하늘/미스 센티널
 
 // -------------------------------------------------------
@@ -58,24 +60,27 @@ struct TraceResult {
     float3 worldPos;    // 첫 번째 히트 지점 (motion vector 계산용)
 };
 
+float RadianceWeight(float3 radiance) {
+    return max(0.0f, dot(radiance, float3(0.2126f, 0.7152f, 0.0722f)));
+}
+
+void UpdateRepresentativeHitDistance(
+    inout float representativeHitDist,
+    inout float representativeWeight,
+    float3 radiance,
+    float candidateHitDist)
+{
+    float weight = RadianceWeight(radiance);
+    if (weight > representativeWeight) {
+        representativeWeight = weight;
+        representativeHitDist = candidateHitDist;
+    }
+}
+
 // -------------------------------------------------------
 // 법선 옥타헤드럴 인코딩 (NRD 권장)
 // 단위 구 벡터 → [0,1]^2 2D UV
 // -------------------------------------------------------
-float2 OctahedralEncode(float3 n) {
-    float l1 = abs(n.x) + abs(n.y) + abs(n.z);
-    n /= (l1 + 1e-10f);
-    float2 uv;
-    if (n.z >= 0.0f) {
-        uv = n.xy;
-    } else {
-        float signX = n.x >= 0.0f ? 1.0f : -1.0f;
-        float signY = n.y >= 0.0f ? 1.0f : -1.0f;
-        uv = (1.0f - abs(float2(n.y, n.x))) * float2(signX, signY);
-    }
-    return uv * 0.5f + 0.5f;
-}
-
 float2 ClipToPixel(float4 clipPos, uint2 screenSize) {
     float2 ndc = clipPos.xy / clipPos.w;
     float2 uv  = float2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f);
@@ -113,8 +118,10 @@ Ray GenerateCameraRay(uint2 pixelCoord, uint2 screenSize, uint frameCount) {
 //   - 첫 간접 바운스의 로브 타입으로 이후 경로 채널 결정
 //     (diffuse 바운스로 시작 → 이후 기여 모두 diffuse, 반대 동일)
 // -------------------------------------------------------
-TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
+TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diffuseHitDist, out float specularHitDist) {
     TraceResult result;
+    diffuseHitDist = 0.0f;
+    specularHitDist = 0.0f;
     result.diffuse    = float3(0, 0, 0);
     result.specular   = float3(0, 0, 0);
     result.hitT       = NRD_HIT_T_MAX;
@@ -132,6 +139,10 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
     bool   prevSpecular  = true;
     bool   pathTypeSet   = false;   // 첫 간접 바운스 로브가 결정됐는지
     bool   pathIsSpecular = false;  // true = specular 경로, false = diffuse 경로
+    float  diffusePathLength = 0.0f;
+    float  specularFirstHitDist = 0.0f;
+    float  diffuseHitWeight = 0.0f;
+    float  specularHitWeight = 0.0f;
 
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce) {
         SurfaceHit hit;
@@ -139,12 +150,27 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
             // 하늘 히트 — MIS 없음
             float3 sky = GetSkyColor(ray.direction) * throughput;
             if (any(sky > 0.0f)) {
-                if (bounce == 0 || !pathTypeSet || !pathIsSpecular)
+                if (bounce == 0 || !pathTypeSet || !pathIsSpecular) {
                     result.diffuse  += sky;
-                else
+                    if (bounce > 0)
+                        UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, sky, NRD_HIT_T_MAX);
+                }
+                else {
                     result.specular += sky;
+                    float candidateSpecHitDist = specularFirstHitDist > 0.0f ? specularFirstHitDist : NRD_HIT_T_MAX;
+                    UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight, sky, candidateSpecHitDist);
+                }
             }
             break;
+        }
+
+        if (bounce > 0) {
+            if (pathTypeSet && pathIsSpecular) {
+                if (specularFirstHitDist == 0.0f)
+                    specularFirstHitDist = hit.t;
+            } else {
+                diffusePathLength += hit.t;
+            }
         }
 
         // -------------------------------------------------------
@@ -181,10 +207,15 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
                         : PowerHeuristic(prevBrdfPdf, lightPdf);
                 }
                 emitContrib = hit.material.emissive * throughput * w;
-                if (pathTypeSet && pathIsSpecular)
+                if (pathTypeSet && pathIsSpecular) {
                     result.specular += emitContrib;
-                else
+                    float candidateSpecHitDist = specularFirstHitDist > 0.0f ? specularFirstHitDist : hit.t;
+                    UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight, emitContrib, candidateSpecHitDist);
+                }
+                else {
                     result.diffuse  += emitContrib;
+                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, emitContrib, diffusePathLength);
+                }
             }
             break;
         }
@@ -201,8 +232,9 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
                 pixelCoord, (uint)(bounce * 10 + li + 50), frameCount);
 
             float  lightPdf;
+            float  lightHitDist;
             float3 neeRaw = SampleDirectLight(
-                hit.p, N, V, hit.material, xiNEE, li, lightPdf);
+                hit.p, N, V, hit.material, xiNEE, li, lightPdf, lightHitDist);
 
             if (lightPdf > 0.0f && any(neeRaw > 0.0f)) {
                 // MIS 가중치 계산 (구형 광원 기준으로 방향 복원)
@@ -227,13 +259,22 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
 
                 if (bounce == 0) {
                     // 첫 히트: lobe 가중치로 diffuse/specular 분배
-                    result.diffuse  += neeContrib * lobe.pDiff;
-                    result.specular += neeContrib * lobe.pSpec;
+                    float3 diffuseContrib = neeContrib * lobe.pDiff;
+                    float3 specularContrib = neeContrib * lobe.pSpec;
+                    result.diffuse  += diffuseContrib;
+                    result.specular += specularContrib;
+                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, diffuseContrib, lightHitDist);
+                    UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight, specularContrib, lightHitDist);
                 } else {
-                    if (pathTypeSet && pathIsSpecular)
+                    if (pathTypeSet && pathIsSpecular) {
                         result.specular += neeContrib;
-                    else
+                        float candidateSpecHitDist = specularFirstHitDist > 0.0f ? specularFirstHitDist : lightHitDist;
+                        UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight, neeContrib, candidateSpecHitDist);
+                    }
+                    else {
                         result.diffuse  += neeContrib;
+                        UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, neeContrib, diffusePathLength + lightHitDist);
+                    }
                 }
             }
         }
@@ -313,6 +354,8 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     float3 specular = float3(0, 0, 0);
 
     TraceResult res;
+    float resDiffuseHitDist = 0.0f;
+    float resSpecularHitDist = 0.0f;
     res.diffuse    = float3(0, 0, 0);
     res.specular   = float3(0, 0, 0);
     res.hitT       = NRD_HIT_T_MAX;
@@ -327,7 +370,12 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     for (int s = 0; s < SAMPLES_PER_PIXEL; ++s) {
         uint sampleSeed = frameCount * (uint)SAMPLES_PER_PIXEL + (uint)s;
         Ray  ray        = GenerateCameraRay(pixelCoord, uint2(screenW, screenH), sampleSeed);
-        TraceResult r   = TracePath(ray, pixelCoord, sampleSeed);
+        float traceDiffuseHitDist = 0.0f;
+        float traceSpecularHitDist = 0.0f;
+        TraceResult r   = TracePath(ray, pixelCoord, sampleSeed, traceDiffuseHitDist, traceSpecularHitDist);
+        res = r;
+        resDiffuseHitDist = traceDiffuseHitDist;
+        resSpecularHitDist = traceSpecularHitDist;
 
         if (!any(isnan(r.diffuse))  && !any(isinf(r.diffuse)))
             diffuse  += clamp(r.diffuse,  0.0f, 10.0f);
@@ -339,16 +387,24 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     diffuse  /= (float)SAMPLES_PER_PIXEL;
     specular /= (float)SAMPLES_PER_PIXEL;
 
+    // NOTE: result.diffuse already contains albedo from the Lambertian BRDF
+    // (kD * albedo / PI). Composite.hlsl does NOT multiply by albedo again,
+    // so no demodulation is needed here.
+
     // -------------------------------------------------------
     // G-buffer 출력 (per-frame overwrite)
     // -------------------------------------------------------
-    g_diffuseRadiance[pixelCoord]  = float4(diffuse,  res.hitT);
-    g_specularRadiance[pixelCoord] = float4(specular, res.hitT);
+    float diffuseHitDist = res.hitSurface ? resDiffuseHitDist : 0.0f;
+    float specularHitDist = res.hitSurface ? resSpecularHitDist : 0.0f;
+    float diffuseNormHitDist = NrdReblurGetNormHitDist(diffuseHitDist, res.viewZ, REBLUR_HIT_DIST_PARAMS, 1.0f);
+    float specularNormHitDist = NrdReblurGetNormHitDist(specularHitDist, res.viewZ, REBLUR_HIT_DIST_PARAMS, res.roughness);
+
+    g_diffuseRadiance[pixelCoord]  = NrdPackReblurRadianceAndNormHitDist(diffuse, diffuseNormHitDist);
+    g_specularRadiance[pixelCoord] = NrdPackReblurRadianceAndNormHitDist(specular, specularNormHitDist);
 
     g_viewZ[pixelCoord] = res.hitSurface ? res.viewZ : NRD_HIT_T_MAX;
 
-    float2 octN = OctahedralEncode(res.normal);
-    g_normalRoughness[pixelCoord] = float4(octN.x, octN.y, res.roughness, 1.0f);
+    g_normalRoughness[pixelCoord] = NrdPackNormalAndRoughness(res.normal, res.roughness);
 
     float2 motionVector = float2(0.0f, 0.0f);
     if (res.hitSurface) {

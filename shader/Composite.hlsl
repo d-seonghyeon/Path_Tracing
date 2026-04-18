@@ -4,8 +4,10 @@
 // 현재는 디노이즈 없이 PathTracer 직출력을 합성 (Phase 2 이후 변경 예정).
 // -------------------------------------------------------
 
-Texture2D<float4>       g_diffuseRadiance    : register(t0); // .rgb=diffuse, .a=hitT
-Texture2D<float4>       g_specularRadiance   : register(t1); // .rgb=specular
+#include "NrdFrontend.hlsli"
+
+Texture2D<float4>       g_diffuseRadiance    : register(t0); // .rgb=YCoCg radiance, .a=normHitDist
+Texture2D<float4>       g_specularRadiance   : register(t1); // .rgb=YCoCg radiance, .a=normHitDist
 Texture2D<unorm float4> g_baseColorMetalness : register(t2); // .rgb=albedo, .a=metalness
 Texture2D<float4>       g_emissive           : register(t3); // .rgb=emissive
 
@@ -17,13 +19,13 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     g_compositeOutput.GetDimensions(w, h);
     if (id.x >= w || id.y >= h) return;
 
-    float3 diffuse  = g_diffuseRadiance[id.xy].rgb;
-    float3 specular = g_specularRadiance[id.xy].rgb;
-    float3 albedo   = g_baseColorMetalness[id.xy].rgb;
+    float3 diffuse  = NrdYCoCgToLinear(g_diffuseRadiance[id.xy].rgb);
+    float3 specular = NrdYCoCgToLinear(g_specularRadiance[id.xy].rgb);
     float3 emissive = g_emissive[id.xy].rgb;
 
-    // diffuse * albedo + specular + emissive
-    float3 composite = diffuse * albedo + specular + emissive;
+    // diffuse already contains albedo from the path tracer's Lambertian BRDF
+    // (kD * albedo / PI), so we must NOT multiply by albedo again here.
+    float3 composite = diffuse + specular + emissive;
 
     g_compositeOutput[id.xy] = float4(composite, 1.0f);
 }

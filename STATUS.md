@@ -7,8 +7,8 @@
 
 ## 0. Current Phase
 
-- Active phase: `Phase 2 - NrdDenoiser wrapper + DXBC pipeline`
-- Detailed sub-phase: `P2-4 - NRD backend fully wired; REBLUR_DIFFUSE_SPECULAR active`
+- Active phase: `Phase 3 - Quality tuning`
+- Detailed sub-phase: `P3-2 - packing validated visually; input semantics under audit`
 - Blocked: `No`
 - Branch: `feature/nrd-phase0`
 
@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `7ce3894` |
+| Hash | `9b861b3` |
 | Author | Claude Code |
 | Date | 2026-04-18 |
-| Scope | `P4-0` A/B toggle (`F1 = denoise on/off`) |
-| Summary | `m_denoiseEnabled` + F1 toggle, conditional NRD pass skip, Composite chooses raw G-buffer or denoised textures |
+| Scope | `P2` ShaderMake patch + full NRD REBLUR_DIFFUSE_SPECULAR backend wiring |
+| Summary | `cmake/patch_nrd.cmake` (removes `--useAPI`, fixes `SHADERMAKE_FXC_PATH`); `nrd_denoiser.cpp` full backend: CreateInstance, DXBC pipelines, permanent/transient pool, samplers, cbuffer, dispatch loop; `NrdCameraData` + `m_prevView`; build + 238 NRD shaders succeeded |
 
 ---
 
@@ -68,14 +68,13 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Run the app and verify NrdDenoiser logs "REBLUR_DIFFUSE_SPECULAR ready" on startup.
-[2] Move camera (WASD) and toggle F1 — check that denoise path is visually different from raw.
-    Note: output may look noisy/incorrect until Phase 3 HitT normalization is done.
-[3] Phase 3: implement REBLUR_FrontEnd_GetNormHitDist in PathTracer.hlsl for proper hitT packing.
+[1] Run app and verify F1=ON (denoise) now shows correct brightness on building walls.
+    If building walls are still near-black, the scene lighting (light intensity / sky ambient) is the root cause — increase emission values in the city scene.
+    If F1=ON is bright but over-blurred, tune REBLUR spatial parameters.
 ```
 
-Owner: Claude (app run + Phase 3 quality)  
-Claude completed: Phase 2 full wiring (NRD instance + pipelines + pools + dispatch loop)
+Owner: Claude Code
+Claude Code completed: Reverted incorrect primaryAlbedo demodulation; changed Composite from `diffuse * albedo + specular + emissive` to `diffuse + specular + emissive` because result.diffuse already contains BRDF albedo. Build succeeded.
 
 ---
 
@@ -84,32 +83,52 @@ Claude completed: Phase 2 full wiring (NRD instance + pipelines + pools + dispat
 ### Newly introduced
 
 - `shader/Composite.hlsl` - HDR composite pass for `diffuse * albedo + specular + emissive`
+- `shader/NrdFrontend.hlsli` - local NRD-compatible front-end helpers for radiance / hit-distance / normal packing
 - `GlobalUniforms.prevViewProj` / `currViewProj` - motion vector matrices
 - `Context` screen resources - 7 G-buffer textures + `m_compositeTexture` + `m_denoisedDiffuse/Specular`
 - `PT_ENABLE_NRD` - enabled only when local NRD source/install is available
 - `src/nrd_denoiser.{h,cpp}` - DX11 NRD wrapper without NRI
 - `NrdGBufferInputs` / `NrdDenoisedOutputs` - grouped denoise I/O structs
-- Render path - `PT -> NRD(stub) -> Composite -> ToneMap`
+- `NrdCameraData` - per-frame view/proj/prevView matrices for NRD CommonSettings
+- `NrdPoolEntry` - permanent/transient pool texture entry (texture + SRV + UAV)
+- `m_prevView` in `Context` - previous frame view matrix for NrdCameraData
+- Render path - `PT -> NRD -> Composite -> ToneMap`
 - `m_denoiseEnabled` + `F1` toggle - A/B path between raw and denoise-enabled rendering
 - `NrdDenoiser::GetBackendStatusLabel()` / `HasUsableBackend()` - explicit stub vs real backend status
 - `cmake/patch_nrd.cmake` - patches NRD v4.14.3 CMakeLists.txt for NVIDIA-RTX/ShaderMake compatibility
+- `PathTracer.hlsl` now packs diffuse/specular with REBLUR-compatible normalized hit distance and YCoCg radiance
+- `PathTracer.hlsl` now packs normal/roughness with an NRD-compatible encoding layout
+- `Composite.hlsl` now decodes packed YCoCg radiance back to linear RGB; formula changed to `diffuse + specular + emissive` (no albedo multiply — albedo already in BRDF output)
 
 ### Important current behavior
 
-- Local NRD v4.14.3 source is now present under `build/dep_nrd-prefix/src/dep_nrd`.
+- Local NRD v4.14.3 source is present under `build/dep_nrd-prefix/src/dep_nrd`.
 - `Dependency.cmake` uses the NRD source-local SDK layout (`Include`, `Integration`, `Shaders/Include`, `_Bin/Debug`).
-- **ShaderMake CLI mismatch fixed** (Claude P2-3): `NVIDIA-RTX/ShaderMake` (main) dropped `--useAPI` and uses `SHADERMAKE_FXC_PATH` not `FXC_PATH`. Both issues patched in `build/dep_nrd-prefix/src/dep_nrd/CMakeLists.txt` and via `cmake/patch_nrd.cmake` (PATCH_COMMAND in Dependency.cmake for future clones). Configure stamp deleted — next build will re-configure dep_nrd.
+- ShaderMake CLI mismatch is fixed: `NVIDIA-RTX/ShaderMake` (main) dropped `--useAPI` and uses `SHADERMAKE_FXC_PATH` instead of `FXC_PATH`. Both issues are patched in `build/dep_nrd-prefix/src/dep_nrd/CMakeLists.txt` and via `cmake/patch_nrd.cmake`.
 - `F1` only activates the denoise path when a usable backend actually exists; otherwise rendering stays on the raw G-buffer path and logs the stub status.
+- `nrd_denoiser.cpp` now sets `ReblurSettings.hitDistanceParameters` explicitly to match shader-side packing constants (`A=3, B=0.1, C=20, D=-25`).
+- First quality-tuning pass in `nrd_denoiser.cpp` biases REBLUR toward faster history rejection: `antilagSettings = { sigmaScale=3.0, sensitivity=2.0 }`, `maxAccumulatedFrameNum = 24`, `maxFastAccumulatedFrameNum = 4`, `diffuse/specularPrepassBlurRadius = 20/35`.
+- Runtime checks completed on 2026-04-18: Debug build passed, app stayed alive, `REBLUR_DIFFUSE_SPECULAR ready` logged, and `F1` still logged `Denoise OFF` / `Denoise ON` after the Phase 3 packing change.
+- Manual quality comparison completed on 2026-04-18: after camera movement, `F1=ON` produced a much cleaner image while `F1=OFF` remained heavily speckled on dark building faces. The current denoiser path is active and materially affecting output.
+- Resize validation repeated on 2026-04-18 with the staged-allocation `Context::OnResize()` path: Debug build passed, the app survived two live window resizes, and stdout logged `Window Resized: 1088x642` then `Window Resized: 828x422` without crashing or leaving the render path unusable.
+- Anti-lag tuning smoke test completed on 2026-04-18: Debug build passed after the new REBLUR settings, the app stayed alive for 6 seconds, and startup again logged `REBLUR_DIFFUSE_SPECULAR ready` with no stderr output.
+- Manual camera-motion probe completed on 2026-04-18 with `quality_tuned_denoise_on/off.png` plus `ghosting_probe_immediate/settled.png`: the new settings did not show an obvious long-lived ghost trail in the tested move, but dark regions still collapsed too aggressively, so the next pass should focus on restoring detail rather than pushing anti-lag harder.
+- Second REBLUR sweep completed on 2026-04-18 with a partial rollback toward defaults (`antilag` 3.5/2.5, history 28/5, prepass blur 24/42). The build and runtime capture path both succeeded, but `quality_retuned_denoise_on.png` still did not recover dark-scene detail enough to call the issue solved.
+- Third REBLUR sweep completed on 2026-04-18 with looser spatial rejection (`minHitDistanceWeight = 0.18`, `lobeAngleFraction = 0.20`, `roughnessFraction = 0.20`, `planeDistanceSensitivity = 0.03`) while keeping the moderated anti-lag/history values. Build and capture succeeded, but `quality_third_sweep_on.png` still looked materially similar to the second sweep, which suggests the remaining dark-scene collapse may not be fixable by parameter tuning alone.
+- Input audit on 2026-04-18 found a real REBLUR semantic mismatch: `PathTracer.hlsl` had been feeding the primary camera-hit distance into `IN_DIFF_RADIANCE_HITDIST` / `IN_SPEC_RADIANCE_HITDIST`, even though NRD's own `NRD.hlsli` explicitly says primary hit distance must be ignored. A first fix now feeds secondary-path hit distance estimates instead, which improved the fully-collapsed static image somewhat, but the denoised image still spends time near-black before settling.
+- A targeted startup-response tuning pass on 2026-04-18 (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`) did not materially improve the early near-black warm-up compared with the post-hit-distance-fix baseline.
+- A follow-up NEE audit on 2026-04-18 found that primary and indirect direct-light contributions were still carrying little or no representative hit distance. Local shader edits now pass `lightHitDist` out of `SampleDirectLight(...)` and choose a luminance-weighted representative hit distance for the diffuse/specular channels, which produced a visibly brighter settled static frame than the previous primary-hit-distance-only fix.
+- A longer static probe on 2026-04-18 (`long_probe_4s.png`, `long_probe_8s.png`, `long_probe_12s.png`) suggests the issue is not just a short warm-up: the 4s and 8s frames still looked similarly over-dark before the latest local patch.
+- There is now one additional local-only, unvalidated patch in `shader/PathTracer.hlsl`: diffuse radiance is demodulated by the primary-hit albedo before packing, because `Composite.hlsl` already applies `diffuse * baseColor + specular + emissive`, which otherwise double-multiplies the primary albedo and can explain the persistent dark collapse. This patch has been written but NOT yet rebuilt or runtime-checked.
 
-### Phase 2 [C] Review — Binding / Slot / Resource Lifetime (Claude P2-3)
+### Phase 2 [C] Review - Binding / Slot / Resource Lifetime
 
 No critical conflicts found. Details:
-- SRV/UAV hazards: none — each pass null-clears before the next binds the same texture.
-- CopyResource ref counting in stub Denoise(): `GetResource()` increments refcount; matching `Release()` calls present. ✓
-- ToneMap binds u0=null, u1=outputUAV (slots 0..1 set in one call); null-cleared after. ✓
-- b0 (GlobalUB) is never unbound after PathTracer — it remains bound in Composite/ToneMap. No behavioral impact (those passes don't use b0), but worth cleaning up before shipping.
-- `OnResize` early-return on mid-sequence failure leaves partial resource state; `Render()` called with a partially initialized Context would crash. Low-priority risk — acceptable for now.
-- Comment bug fixed: "패스 3: ToneMap" → "패스 4: ToneMap" in context.cpp.
+- SRV/UAV hazards: none - each pass null-clears before the next binds the same texture.
+- CopyResource ref counting in stub `Denoise()`: `GetResource()` increments refcount and matching `Release()` calls are present.
+- ToneMap binds `u0=null`, `u1=outputUAV` (slots `0..1` set in one call); null-cleared after.
+- `b0 (GlobalUB)` is never unbound after PathTracer. No behavioral impact today, but worth cleaning up before shipping.
+- The old `OnResize` partial-initialization risk was fixed locally in `src/context.cpp` by staging all screen textures before swapping them in.
 
 ### Fixed decisions
 
@@ -125,11 +144,7 @@ No critical conflicts found. Details:
 
 1. Keep denoise input at `R16G16B16A16_FLOAT`, or promote specific signals later if quality requires it?
 2. When the real backend is wired, should resize-triggered reset also be logged visibly for debugging?
-3. If local NRD SDK is restored, should we immediately complete Phase 2 first, or keep the current A/B work in parallel?
-
----
-
-4. ~~Should we patch upstream NRD's standalone CMake locally for this repo?~~ **Resolved**: `cmake/patch_nrd.cmake` + PATCH_COMMAND in dep_nrd. Future-safe for clean builds.
+3. `normalRoughness` currently uses a float texture while storing NRD-compatible packed values; keep this layout, or tighten it later to a more storage-efficient format after validation?
 
 ---
 
@@ -138,12 +153,26 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-18 | Claude Code | P3-2 | Diagnosed root cause: result.diffuse already contains BRDF albedo (kD*albedo/PI from SampleDirectLight), so Composite `diffuse*albedo` was double-multiplying; reverted demodulation patch; changed Composite to `diffuse + specular + emissive`; build succeeded
+2026-04-18 | Claude Code | P3-2 | Built primary-albedo diffuse demodulation patch (PathTracer.hlsl `diffuse /= primaryAlbedo` before NRD packing); Debug build succeeded, shader sync confirmed; runtime validation pending
+2026-04-18 | Codex       | P3-2 | Prepared a longer static timing probe (4s / 8s / 12s); the pre-demod frames still looked similarly dark at 4s and 8s, so the issue is likely deeper than short warm-up alone
+2026-04-18 | Codex       | P3-2 | Added luminance-weighted representative hit-distance tracking for direct/NEE contributions and passed `lightHitDist` out of `SampleDirectLight(...)`; the settled static frame looked brighter than the prior primary-hit-distance-only baseline
+2026-04-18 | Codex       | P3-2 | Wrote an unvalidated primary-albedo diffuse demodulation patch in `PathTracer.hlsl` after noticing `Composite.hlsl` already multiplies by `baseColor`; next session must rebuild and verify this before drawing conclusions
+2026-04-18 | Codex       | P3-2 | Fixed one real REBLUR input bug by removing primary hit distance from the packed radiance-hit-distance path; static denoised output improved, but the image still warms up from near-black over about 1-2 seconds
+2026-04-18 | Codex       | P3-2 | Tried a targeted startup-response tweak (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`), but the early near-black warm-up remained materially similar
+2026-04-18 | Codex       | P3-2 | Tried a third REBLUR sweep with looser spatial rejection (`minHitDistanceWeight`, lobe/roughness fraction, plane sensitivity), but capture output stayed materially similar to the second sweep; next step should audit denoiser inputs instead of more blind tuning
+2026-04-18 | Codex       | P3-2 | Tried a second REBLUR sweep to recover dark detail (`antilag` 3.5/2.5, history 28/5, prepass blur 24/42); build and capture succeeded, but dark-scene detail still did not recover enough
+2026-04-18 | Codex       | P3-2 | Manual motion-quality probe on the first REBLUR tuning showed no obvious persistent ghosting in the tested move, but dark-scene detail remained over-collapsed; next pass should rebalance detail retention
+2026-04-18 | Codex       | P3-2 | Tuned first REBLUR quality pass in `nrd_denoiser.cpp` (`antilag` 3.0/2.0, history 24/4, prepass blur 20/35); Debug build and runtime smoke test succeeded
+2026-04-18 | Codex       | P2-4 | Re-validated the staged `Context::OnResize()` fix at runtime: Debug build passed, app survived two live resizes, and resize logs were emitted without crash
+2026-04-18 | Codex       | P3-1 | Manual quality check after camera movement confirmed denoise ON materially reduces speckle versus raw OFF path; next step is anti-lag / blur tuning
+2026-04-18 | Codex       | P3-1 | Added NRD-compatible front-end packing (`shader/NrdFrontend.hlsli`), switched PathTracer diffuse/specular + normal/roughness packing, updated Composite to decode YCoCg, matched hitDistanceParameters in C++, build/runtime/F1 checks succeeded
 2026-04-18 | Claude Code | P2-4 | Full NRD backend wiring: nrd::CreateInstance, pipeline CreateComputeShader, permanent/transient pool, samplers, cbuffer, dispatch loop, ResolveSRV/UAV, NrdCameraData pass; build succeeded
-2026-04-18 | Claude Code | P2-3 | Phase 2 [C] review (no slot conflicts); patched NRD CMakeLists.txt for NVIDIA-RTX/ShaderMake compat (--useAPI removal + FXC_PATH fix); added cmake/patch_nrd.cmake; fixed context.cpp comment (패스 3→4)
-2026-04-18 | Codex       | P2-2 | Moved NRD target to v4.14.3, fetched local SDK source, fixed dependency path assumptions, and confirmed dep_nrd currently fails in NRDShaders due to ShaderMake CLI mismatch
+2026-04-18 | Claude Code | P2-3 | Phase 2 [C] review (no slot conflicts); patched NRD CMakeLists.txt for NVIDIA-RTX/ShaderMake compat (`--useAPI` removal + `FXC_PATH` fix); added `cmake/patch_nrd.cmake`; fixed context.cpp comment
+2026-04-18 | Codex       | P2-2 | Moved NRD target to v4.14.3, fetched local SDK source, fixed dependency path assumptions, and confirmed `dep_nrd` failed in NRDShaders due to ShaderMake CLI mismatch
 2026-04-18 | Codex       | P2-1 | Confirmed local NRD SDK/NRD.lib missing, clarified stub backend status, and prevented F1 denoise toggle from pretending to use a real backend
 2026-04-18 | Claude Code | P4-0 | Implemented F1 A/B toggle (`m_denoiseEnabled`), conditional NRD pass skip, Composite input selection, build succeeded
-2026-04-18 | Claude Code | P2-0 | Review fixes (R10G10B10A2 -> R16F4, dead cbuffer), `NrdDenoiser::Denoise()` interface, 4-pass scaffold, build succeeded
+2026-04-18 | Claude Code | P2-0 | Review fixes (`R10G10B10A2 -> R16F4`, dead cbuffer), `NrdDenoiser::Denoise()` interface, 4-pass scaffold, build succeeded
 2026-04-17 21:11 | Codex | P1-0 | Added offline-safe `dep_nrd`, `PT_ENABLE_NRD`, `nrd_denoiser` scaffold, external build succeeded
 2026-04-17 20:02 | Codex | P0-1 | Added 7 G-buffer outputs, prev/curr viewProj, motion vector, Composite path, clean-env build succeeded
 2026-04-17 | Claude Code | P0-0 | Wrote initial STATUS.md / AGENTS.md
