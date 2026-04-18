@@ -300,6 +300,24 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
 
         // --- DenoiserSettings (REBLUR 기본값 사용) ---
         nrd::ReblurSettings reblurSettings = {};
+        reblurSettings.hitDistanceParameters.A = 3.0f;
+        reblurSettings.hitDistanceParameters.B = 0.1f;
+        reblurSettings.hitDistanceParameters.C = 20.0f;
+        reblurSettings.hitDistanceParameters.D = -25.0f;
+        // Third quality pass: keep the moderated anti-lag/history values, but loosen a
+        // few spatial rejection terms so dark areas are less likely to collapse away.
+        reblurSettings.antilagSettings.luminanceSigmaScale   = 3.5f;
+        reblurSettings.antilagSettings.luminanceSensitivity  = 2.5f;
+        reblurSettings.maxAccumulatedFrameNum                = 28;
+        reblurSettings.maxFastAccumulatedFrameNum            = 5;
+        reblurSettings.maxStabilizedFrameNum                 = 0;
+        reblurSettings.historyFixBasePixelStride             = 8;
+        reblurSettings.diffusePrepassBlurRadius              = 24.0f;
+        reblurSettings.specularPrepassBlurRadius             = 42.0f;
+        reblurSettings.minHitDistanceWeight                  = 0.18f;
+        reblurSettings.lobeAngleFraction                     = 0.20f;
+        reblurSettings.roughnessFraction                     = 0.20f;
+        reblurSettings.planeDistanceSensitivity              = 0.03f;
         nrd::SetDenoiserSettings(*m_nrdInstance, REBLUR_ID, &reblurSettings);
 
         // --- GetComputeDispatches ---

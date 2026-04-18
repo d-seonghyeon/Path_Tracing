@@ -170,7 +170,7 @@ Phase 0 종료 시: denoiser 없이도 "분리된 1spp noisy + composition + ton
 ExternalProject_Add(
     dep_nrd
     GIT_REPOSITORY "https://github.com/NVIDIAGameWorks/RayTracingDenoiser.git"
-    GIT_TAG "v4.13.3"           # 2026-04 기준 최신 안정 태그로 갱신
+    GIT_TAG "v4.14.3"           # 2026-04 기준 최신 안정 태그로 갱신
     GIT_SHALLOW 1
     UPDATE_DISCONNECTED 1
     CMAKE_ARGS

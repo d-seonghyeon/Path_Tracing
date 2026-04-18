@@ -248,40 +248,6 @@ bool Context::BuildSceneBuffers(ID3D11Device *device) {
 }
 
 void Context::OnResize(ID3D11Device *device, uint32_t width, uint32_t height) {
-    m_outputUAV.Reset();
-    m_outputSRV.Reset();
-    m_outputTexture.Reset();
-    m_compositeUAV.Reset();
-    m_compositeSRV.Reset();
-    m_compositeTexture.Reset();
-    m_diffuseRadianceUAV.Reset();
-    m_diffuseRadianceSRV.Reset();
-    m_diffuseRadianceTexture.Reset();
-    m_specularRadianceUAV.Reset();
-    m_specularRadianceSRV.Reset();
-    m_specularRadianceTexture.Reset();
-    m_viewZUAV.Reset();
-    m_viewZSRV.Reset();
-    m_viewZTexture.Reset();
-    m_normalRoughnessUAV.Reset();
-    m_normalRoughnessSRV.Reset();
-    m_normalRoughnessTexture.Reset();
-    m_motionVectorUAV.Reset();
-    m_motionVectorSRV.Reset();
-    m_motionVectorTexture.Reset();
-    m_baseColorMetalnessUAV.Reset();
-    m_baseColorMetalnessSRV.Reset();
-    m_baseColorMetalnessTexture.Reset();
-    m_emissiveUAV.Reset();
-    m_emissiveSRV.Reset();
-    m_emissiveTexture.Reset();
-    m_denoisedDiffuseUAV.Reset();
-    m_denoisedDiffuseSRV.Reset();
-    m_denoisedDiffuseTexture.Reset();
-    m_denoisedSpecularUAV.Reset();
-    m_denoisedSpecularSRV.Reset();
-    m_denoisedSpecularTexture.Reset();
-
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width            = width;
     desc.Height           = height;
@@ -319,75 +285,145 @@ void Context::OnResize(ID3D11Device *device, uint32_t width, uint32_t height) {
         return true;
     };
 
-    // LDR 출력 텍스처
+    ComPtr<ID3D11Texture2D>           outputTexture;
+    ComPtr<ID3D11UnorderedAccessView> outputUAV;
+    ComPtr<ID3D11ShaderResourceView>  outputSRV;
+    ComPtr<ID3D11Texture2D>           compositeTexture;
+    ComPtr<ID3D11UnorderedAccessView> compositeUAV;
+    ComPtr<ID3D11ShaderResourceView>  compositeSRV;
+    ComPtr<ID3D11Texture2D>           diffuseRadianceTexture;
+    ComPtr<ID3D11UnorderedAccessView> diffuseRadianceUAV;
+    ComPtr<ID3D11ShaderResourceView>  diffuseRadianceSRV;
+    ComPtr<ID3D11Texture2D>           specularRadianceTexture;
+    ComPtr<ID3D11UnorderedAccessView> specularRadianceUAV;
+    ComPtr<ID3D11ShaderResourceView>  specularRadianceSRV;
+    ComPtr<ID3D11Texture2D>           viewZTexture;
+    ComPtr<ID3D11UnorderedAccessView> viewZUAV;
+    ComPtr<ID3D11ShaderResourceView>  viewZSRV;
+    ComPtr<ID3D11Texture2D>           normalRoughnessTexture;
+    ComPtr<ID3D11UnorderedAccessView> normalRoughnessUAV;
+    ComPtr<ID3D11ShaderResourceView>  normalRoughnessSRV;
+    ComPtr<ID3D11Texture2D>           motionVectorTexture;
+    ComPtr<ID3D11UnorderedAccessView> motionVectorUAV;
+    ComPtr<ID3D11ShaderResourceView>  motionVectorSRV;
+    ComPtr<ID3D11Texture2D>           baseColorMetalnessTexture;
+    ComPtr<ID3D11UnorderedAccessView> baseColorMetalnessUAV;
+    ComPtr<ID3D11ShaderResourceView>  baseColorMetalnessSRV;
+    ComPtr<ID3D11Texture2D>           emissiveTexture;
+    ComPtr<ID3D11UnorderedAccessView> emissiveUAV;
+    ComPtr<ID3D11ShaderResourceView>  emissiveSRV;
+    ComPtr<ID3D11Texture2D>           denoisedDiffuseTexture;
+    ComPtr<ID3D11UnorderedAccessView> denoisedDiffuseUAV;
+    ComPtr<ID3D11ShaderResourceView>  denoisedDiffuseSRV;
+    ComPtr<ID3D11Texture2D>           denoisedSpecularTexture;
+    ComPtr<ID3D11UnorderedAccessView> denoisedSpecularUAV;
+    ComPtr<ID3D11ShaderResourceView>  denoisedSpecularSRV;
+
+    // Output + G-buffer textures are staged locally and swapped in only after success.
     if (!createScreenTexture(
             DXGI_FORMAT_R8G8B8A8_UNORM,
-            m_outputTexture, m_outputUAV, m_outputSRV, "output")) {
+            outputTexture, outputUAV, outputSRV, "output")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
-            m_diffuseRadianceTexture, m_diffuseRadianceUAV, m_diffuseRadianceSRV, "diffuse radiance")) {
+            diffuseRadianceTexture, diffuseRadianceUAV, diffuseRadianceSRV, "diffuse radiance")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
-            m_specularRadianceTexture, m_specularRadianceUAV, m_specularRadianceSRV, "specular radiance")) {
+            specularRadianceTexture, specularRadianceUAV, specularRadianceSRV, "specular radiance")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R32_FLOAT,
-            m_viewZTexture, m_viewZUAV, m_viewZSRV, "viewZ")) {
+            viewZTexture, viewZUAV, viewZSRV, "viewZ")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
-            m_normalRoughnessTexture, m_normalRoughnessUAV, m_normalRoughnessSRV, "normal roughness")) {
+            normalRoughnessTexture, normalRoughnessUAV, normalRoughnessSRV, "normal roughness")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16_FLOAT,
-            m_motionVectorTexture, m_motionVectorUAV, m_motionVectorSRV, "motion vector")) {
+            motionVectorTexture, motionVectorUAV, motionVectorSRV, "motion vector")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R8G8B8A8_UNORM,
-            m_baseColorMetalnessTexture, m_baseColorMetalnessUAV, m_baseColorMetalnessSRV, "baseColor metalness")) {
+            baseColorMetalnessTexture, baseColorMetalnessUAV, baseColorMetalnessSRV, "baseColor metalness")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R11G11B10_FLOAT,
-            m_emissiveTexture, m_emissiveUAV, m_emissiveSRV, "emissive")) {
+            emissiveTexture, emissiveUAV, emissiveSRV, "emissive")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
-            m_denoisedDiffuseTexture, m_denoisedDiffuseUAV, m_denoisedDiffuseSRV, "denoised diffuse")) {
+            denoisedDiffuseTexture, denoisedDiffuseUAV, denoisedDiffuseSRV, "denoised diffuse")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
-            m_denoisedSpecularTexture, m_denoisedSpecularUAV, m_denoisedSpecularSRV, "denoised specular")) {
+            denoisedSpecularTexture, denoisedSpecularUAV, denoisedSpecularSRV, "denoised specular")) {
         return;
     }
 
     if (!createScreenTexture(
             DXGI_FORMAT_R16G16B16A16_FLOAT,
-            m_compositeTexture, m_compositeUAV, m_compositeSRV, "composite")) {
+            compositeTexture, compositeUAV, compositeSRV, "composite")) {
         return;
     }
 
-    if (m_nrdDenoiser)
-        m_nrdDenoiser->OnResize(device, width, height);
+    if (m_nrdDenoiser && !m_nrdDenoiser->OnResize(device, width, height)) {
+        SPDLOG_ERROR("Context::OnResize: failed to resize NRD backend. Keeping previous screen resources.");
+        return;
+    }
+
+    m_outputTexture          = outputTexture;
+    m_outputUAV              = outputUAV;
+    m_outputSRV              = outputSRV;
+    m_compositeTexture       = compositeTexture;
+    m_compositeUAV           = compositeUAV;
+    m_compositeSRV           = compositeSRV;
+    m_diffuseRadianceTexture = diffuseRadianceTexture;
+    m_diffuseRadianceUAV     = diffuseRadianceUAV;
+    m_diffuseRadianceSRV     = diffuseRadianceSRV;
+    m_specularRadianceTexture = specularRadianceTexture;
+    m_specularRadianceUAV     = specularRadianceUAV;
+    m_specularRadianceSRV     = specularRadianceSRV;
+    m_viewZTexture           = viewZTexture;
+    m_viewZUAV               = viewZUAV;
+    m_viewZSRV               = viewZSRV;
+    m_normalRoughnessTexture = normalRoughnessTexture;
+    m_normalRoughnessUAV     = normalRoughnessUAV;
+    m_normalRoughnessSRV     = normalRoughnessSRV;
+    m_motionVectorTexture    = motionVectorTexture;
+    m_motionVectorUAV        = motionVectorUAV;
+    m_motionVectorSRV        = motionVectorSRV;
+    m_baseColorMetalnessTexture = baseColorMetalnessTexture;
+    m_baseColorMetalnessUAV     = baseColorMetalnessUAV;
+    m_baseColorMetalnessSRV     = baseColorMetalnessSRV;
+    m_emissiveTexture        = emissiveTexture;
+    m_emissiveUAV            = emissiveUAV;
+    m_emissiveSRV            = emissiveSRV;
+    m_denoisedDiffuseTexture = denoisedDiffuseTexture;
+    m_denoisedDiffuseUAV     = denoisedDiffuseUAV;
+    m_denoisedDiffuseSRV     = denoisedDiffuseSRV;
+    m_denoisedSpecularTexture = denoisedSpecularTexture;
+    m_denoisedSpecularUAV     = denoisedSpecularUAV;
+    m_denoisedSpecularSRV     = denoisedSpecularSRV;
 
     m_frameCount = 0;
 }
@@ -468,7 +504,7 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     //   m_denoiseEnabled=false 시 패스 전체 스킵 (A/B 토글 F1).
     //   NRD SDK 미연결 시 G-buffer를 denoised 텍스처로 그대로 복사(stub).
     // -------------------------------------------------------
-    const bool useDenoiser = m_denoiseEnabled && m_nrdDenoiser && m_nrdDenoiser->HasUsableBackend();
+    bool useDenoiser = m_denoiseEnabled && m_nrdDenoiser && m_nrdDenoiser->HasUsableBackend();
 
     if (useDenoiser) {
         NrdGBufferInputs nrdIn = {};
@@ -487,7 +523,11 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         nrdCam.projMatrix     = proj;
         nrdCam.prevViewMatrix = (m_frameCount == 0) ? view : m_prevView;
 
-        m_nrdDenoiser->Denoise(context, nrdIn, nrdOut, nrdCam, m_frameCount);
+        if (!m_nrdDenoiser->Denoise(context, nrdIn, nrdOut, nrdCam, m_frameCount)) {
+            SPDLOG_ERROR("Context::Render: NRD denoise failed. Falling back to raw G-buffer for this frame.");
+            m_nrdDenoiser->ResetHistory();
+            useDenoiser = false;
+        }
     }
 
     // -------------------------------------------------------
@@ -592,6 +632,8 @@ void Context::ProcessKeyboard(float deltaTime) {
     // F1: A/B 토글 — denoise on/off (하위 비트 = 이번 호출 전까지 눌렸는지 여부)
     if (GetAsyncKeyState(VK_F1) & 0x0001) {
         m_denoiseEnabled = !m_denoiseEnabled;
+        m_frameCount = 0;
+        if (m_nrdDenoiser) m_nrdDenoiser->ResetHistory();
         const bool backendReady = m_nrdDenoiser && m_nrdDenoiser->HasUsableBackend();
         if (m_denoiseEnabled && !backendReady) {
             SPDLOG_INFO("Denoise requested, but NRD backend is unavailable ({}). Raw G-buffer path will be used until Phase 2 wiring is complete.",

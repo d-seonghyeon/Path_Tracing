@@ -392,9 +392,10 @@ bool IsOccluded(float3 origin, float3 target) {
 float3 SampleDirectLight(
     float3 hitP, float3 hitN, float3 V,
     ShaderMaterial mat, float2 xi, int lightIdx,
-    out float lightPdfOut)
+    out float lightPdfOut, out float lightHitDistOut)
 {
     lightPdfOut = 0.0f;
+    lightHitDistOut = 0.0f;
     ShaderLight light = g_lights[lightIdx];
     if (light.area <= 0.0f) return float3(0, 0, 0);
 
@@ -488,6 +489,7 @@ float3 SampleDirectLight(
     float3 toLight = lPos - hitP;
     float  dist    = length(toLight);
     float3 L       = toLight / dist;
+    lightHitDistOut = dist;
     float  NdotL   = dot(hitN, L);
     float  NdotV   = max(dot(hitN, V), 0.0f);
 

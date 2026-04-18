@@ -67,14 +67,41 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 | `t4` | `g_bvhNodes` (SRV) | |
 | `t5` | `g_bvhPrims` (SRV) | |
 | `t6` | `g_lights` (SRV) | |
-| `u0` | `g_accum` (RWTex2D float4) | **Phase 0 에서 per-frame 출력으로 전환 예정** |
+| `u0` | `g_diffuseRadiance` | `R16G16B16A16_FLOAT` |
+| `u1` | `g_specularRadiance` | `R16G16B16A16_FLOAT` |
+| `u2` | `g_viewZ` | `R32_FLOAT` |
+| `u3` | `g_normalRoughness` | `R16G16B16A16_FLOAT` |
+| `u4` | `g_motionVector` | `R16G16_FLOAT` |
+| `u5` | `g_baseColorMetalness` | `R8G8B8A8_UNORM` |
+| `u6` | `g_emissive` | `R11G11B10_FLOAT` |
+
+### NRD Denoise (stub now, DX11 backend later)
+
+| 바인딩 | 리소스 |
+| --- | --- |
+| `t0` | `g_diffuseRadiance` |
+| `t1` | `g_specularRadiance` |
+| `t2` | `g_viewZ` |
+| `t3` | `g_normalRoughness` |
+| `t4` | `g_motionVector` |
+| `u0` | `g_denoisedDiffuse` |
+| `u1` | `g_denoisedSpecular` |
+
+### Composite (CS)
+
+| 바인딩 | 리소스 |
+| --- | --- |
+| `t0` | `g_denoisedDiffuse` |
+| `t1` | `g_denoisedSpecular` |
+| `t2` | `g_baseColorMetalness` |
+| `t3` | `g_emissive` |
+| `u0` | `g_compositeOutput` |
 
 ### ToneMap (CS)
 
 | 바인딩 | 리소스 |
 | --- | --- |
-| `b0` | `ToneMapCB` (frameCount) |
-| `t10` | `g_hdrInput` (Composite 결과로 교체 예정) |
+| `t10` | `g_hdrInput` (Composite 결과) |
 | `u1` | `g_ldrOutput` (unorm R8G8B8A8) |
 
 ### Phase 0 목표 G-buffer (PathTracer 추가 UAV)
@@ -123,7 +150,7 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 4. **Composite 는 별도 CS 패스**. Denoise 후 `diffuse * baseColor + specular + emissive` 를 합성한다.
 5. **리사이즈·카메라 텔레포트 시** NRD `AccumulationMode::CLEAR_AND_RESTART` 를 호출. `OnResize` 와 "카메라 점프 감지" 분기에 연결.
 6. **셰이더 리소스 수명**: NRD transient pool 은 매 프레임 재사용 가능 (해제 금지). permanent pool 은 리사이즈 시에만 재생성.
-7. **NRD 버전 고정**: `v4.13.3`. 버전업은 별도 PR 로만 한다.
+7. **NRD 버전 고정**: `v4.14.3`. 버전업은 별도 PR 로만 한다.
 
 ---
 
