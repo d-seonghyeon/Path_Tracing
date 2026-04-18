@@ -138,6 +138,12 @@ private:
 
     // A/B 토글 — F1 로 denoise on/off (Phase 4)
     bool m_denoiseEnabled { true };
+
+    // F2 스크린샷 캡처 (Phase 4 FLIP/SSIM 비교용)
+    ComPtr<ID3D11Device> m_device;
+    bool     m_captureRequested { false };
+    uint32_t m_captureIndex     { 0 };
+    void CaptureScreenshot(ID3D11DeviceContext* ctx);
 };
 
 #endif

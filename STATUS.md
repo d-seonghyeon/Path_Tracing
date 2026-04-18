@@ -68,14 +68,16 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Run the app, wait 4-8s static, and compare F1=OFF vs F1=ON.
-    Expected: building lower floors now visibly lit (warm amber from street lamps).
-    If still too dark: raise emission further or add sky ambient.
-    If F1=ON is bright but over-blurred: loosen REBLUR spatial parameters.
+[1] Run the app. Wait 4-8s static (camera still), then:
+    a. F2 → capture_N_raw.png        (F1=OFF baseline)
+    b. F1  → denoise ON
+    c. F2 → capture_N_denoised.png   (F1=ON settled)
+    Compare the two PNGs: lower building faces should be warm-amber lit.
+    If raw is still too dark → raise emission or add sky ambient.
+    If denoised looks over-blurred → loosen REBLUR spatial params.
 ```
 
-Owner: Claude Code
-Claude Code completed: Increased street lamp emission 5× (3.5→18.0) and window emissives 3×; build succeeded.
+Owner: user (visual validation required)
 
 ---
 
@@ -121,6 +123,13 @@ Claude Code completed: Increased street lamp emission 5× (3.5→18.0) and windo
 - A follow-up NEE audit on 2026-04-18 found that primary and indirect direct-light contributions were still carrying little or no representative hit distance. Local shader edits now pass `lightHitDist` out of `SampleDirectLight(...)` and choose a luminance-weighted representative hit distance for the diffuse/specular channels, which produced a visibly brighter settled static frame than the previous primary-hit-distance-only fix.
 - Root cause of persistent dark collapse identified on 2026-04-18: `SampleDirectLight` returns `(kD * albedo/PI + specular) * emission * NdotL / pdf`, so `result.diffuse` already contains albedo from the Lambertian BRDF. The old Composite formula `diffuse * albedo + specular + emissive` was double-multiplying albedo, making dark materials (albedo ~0.1) appear ~10x too dark. Fixed by changing Composite to `diffuse + specular + emissive` and removing the incorrect `diffuse / primaryAlbedo` demodulation from PathTracer.
 
+### F2 Screenshot Capture (Phase 4 FLIP/SSIM)
+
+- `F2` sets `m_captureRequested = true`; captured at end of same `Render()` call.
+- Output filename: `capture_<index>_<denoised|raw>.png` in the CWD of the exe.
+- Uses a per-call staging texture (D3D11_USAGE_STAGING + CPU_ACCESS_READ), then stb_image_write PNG.
+- `stb_image_write.h` is now copied by `Dependency.cmake` alongside `stb_image.h`.
+
 ### Phase 2 [C] Review - Binding / Slot / Resource Lifetime
 
 No critical conflicts found. Details:
@@ -153,6 +162,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-18 | Claude Code | P4-1 | Added F2 screenshot capture (stb_image_write, staging readback); `capture_N_raw.png` / `capture_N_denoised.png` saved to CWD; enables Phase 4 FLIP/SSIM offline comparison
 2026-04-18 | Claude Code | P3-2 | Increased street lamp emission 5× (3.5→18.0), window emissives 3×; lower floors should now show visible amber illumination after double-albedo fix
 2026-04-18 | Claude Code | P3-2 | Diagnosed double-albedo root cause: SampleDirectLight already bakes albedo into BRDF output; Composite `diffuse*albedo` was double-multiplying; changed to `diffuse+specular+emissive`; reverted primaryAlbedo demodulation; build succeeded (commit 6187d9a)
 2026-04-18 | Claude Code | P3-2 | Built primary-albedo diffuse demodulation patch (PathTracer.hlsl `diffuse /= primaryAlbedo` before NRD packing); user reported still dark; patch reverted in next step

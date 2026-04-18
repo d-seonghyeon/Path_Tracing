@@ -1,5 +1,7 @@
 #include "context.h"
 #include <spdlog/spdlog.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb/stb_image_write.h>
 
 // -------------------------------------------------------
 // 지오메트리 생성 헬퍼 (파일 내부 전용)
@@ -80,6 +82,8 @@ ContextUPtr Context::Create(ID3D11Device *device, ID3D11DeviceContext *ctx) {
 }
 
 bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
+    m_device = device;
+
     // 1. 패스 트레이서 컴퓨트 셰이더 로드
     auto cs = Shader::CreateFromFile("shader/PathTracer.hlsl", "CSMain", "cs_5_0");
     if (!cs) return false;
@@ -591,8 +595,42 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     m_prevViewProj = currViewProj;
     m_prevView     = view;
 
+    // F2 스크린샷 캡처 (Phase 4 FLIP/SSIM 비교용)
+    CaptureScreenshot(context);
+
     // 프레임 카운터 증가
     m_frameCount++;
+}
+
+void Context::CaptureScreenshot(ID3D11DeviceContext* ctx) {
+    if (!m_captureRequested) return;
+    m_captureRequested = false;
+
+    D3D11_TEXTURE2D_DESC texDesc;
+    m_outputTexture->GetDesc(&texDesc);
+    texDesc.Usage          = D3D11_USAGE_STAGING;
+    texDesc.BindFlags      = 0;
+    texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    texDesc.MiscFlags      = 0;
+
+    ComPtr<ID3D11Texture2D> staging;
+    HRESULT hr = m_device->CreateTexture2D(&texDesc, nullptr, staging.GetAddressOf());
+    if (FAILED(hr)) { SPDLOG_ERROR("CaptureScreenshot: CreateTexture2D 0x{:08x}", (uint32_t)hr); return; }
+
+    ctx->CopyResource(staging.Get(), m_outputTexture.Get());
+
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    hr = ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) { SPDLOG_ERROR("CaptureScreenshot: Map 0x{:08x}", (uint32_t)hr); return; }
+
+    std::string label    = m_denoiseEnabled ? "denoised" : "raw";
+    std::string filename = "capture_" + std::to_string(m_captureIndex++) + "_" + label + ".png";
+
+    stbi_write_png(filename.c_str(),
+                   (int)texDesc.Width, (int)texDesc.Height, 4,
+                   mapped.pData, (int)mapped.RowPitch);
+    ctx->Unmap(staging.Get(), 0);
+    SPDLOG_INFO("Screenshot saved: {}", filename);
 }
 
 void Context::Present(ID3D11DeviceContext *context, ID3D11RenderTargetView *rtv) {
@@ -646,5 +684,11 @@ void Context::ProcessKeyboard(float deltaTime) {
     if (moved) {
         m_frameCount = 0;
         if (m_nrdDenoiser) m_nrdDenoiser->ResetHistory();
+    }
+
+    // F2: 스크린샷 캡처 요청 (Phase 4 FLIP/SSIM 비교용)
+    if (GetAsyncKeyState(VK_F2) & 0x0001) {
+        m_captureRequested = true;
+        SPDLOG_INFO("Screenshot requested (frame={}, denoise={})", m_frameCount, m_denoiseEnabled);
     }
 }
