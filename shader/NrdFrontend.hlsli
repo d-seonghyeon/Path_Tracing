@@ -5,6 +5,8 @@
 
 static const float NRD_FP16_MAX = 65504.0f;
 static const float NRD_EPS      = 1e-6f;
+static const float NRD_MATERIAL_FACTOR_MIN_SCALE = 0.02f;
+static const float NRD_ROUGHNESS_FACTOR_MIN_SCALE = 0.1f;
 
 float3 NrdSafeNormalize(float3 v)
 {
@@ -19,6 +21,17 @@ float2 NrdEncodeUnitVector(float3 v)
     v.xy = v.z >= 0.0f ? v.xy : octWrap;
 
     return v.xy * 0.5f + 0.5f;
+}
+
+float3 NrdDecodeUnitVector(float2 p)
+{
+    p = p * 2.0f - 1.0f;
+
+    float3 n = float3(p.xy, 1.0f - abs(p.x) - abs(p.y));
+    float t = saturate(-n.z);
+    n.xy -= t * (step(0.0f, n.xy) * 2.0f - 1.0f);
+
+    return NrdSafeNormalize(n);
 }
 
 float3 NrdLinearToYCoCg(float3 color)
@@ -48,6 +61,62 @@ float4 NrdPackNormalAndRoughness(float3 normal, float roughness)
     packed.z  = saturate(roughness);
     packed.w  = 0.0f;
     return packed;
+}
+
+float4 NrdUnpackNormalAndRoughness(float4 packed)
+{
+    float4 result;
+    result.xyz = NrdDecodeUnitVector(packed.xy);
+    result.w = saturate(packed.z);
+    return result;
+}
+
+float3 NrdEnvironmentTerm(float3 rf0, float NoV, float roughness)
+{
+    float m = saturate(roughness * roughness);
+
+    float4 X;
+    X.x = 1.0f;
+    X.y = NoV;
+    X.z = NoV * NoV;
+    X.w = NoV * X.z;
+
+    float4 Y;
+    Y.x = 1.0f;
+    Y.y = m;
+    Y.z = m * m;
+    Y.w = m * Y.z;
+
+    const float2x2 M1 = float2x2(0.99044f, -1.28514f, 1.29678f, -0.755907f);
+    const float3x3 M2 = float3x3(1.0f, 2.92338f, 59.4188f, 20.3225f, -27.0302f, 222.592f, 121.563f, 626.13f, 316.627f);
+    const float2x2 M3 = float2x2(0.0365463f, 3.32707f, 9.0632f, -9.04756f);
+    const float3x3 M4 = float3x3(1.0f, 3.59685f, -1.36772f, 9.04401f, -16.3174f, 9.22949f, 5.56589f, 19.7886f, -20.2123f);
+
+    float bias = dot(mul(M1, X.xy), Y.xy) / max(dot(mul(M2, X.xyw), Y.xyw), NRD_EPS);
+    float scale = dot(mul(M3, X.xy), Y.xy) / max(dot(mul(M4, X.xzw), Y.xyw), NRD_EPS);
+
+    return saturate(rf0 * scale + bias);
+}
+
+void NrdMaterialFactors(
+    float3 normal,
+    float3 viewDir,
+    float3 albedo,
+    float metalness,
+    float roughness,
+    out float3 diffuseFactor,
+    out float3 specularFactor)
+{
+    float3 rf0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, saturate(metalness));
+    float NoV = abs(dot(NrdSafeNormalize(normal), NrdSafeNormalize(viewDir)));
+    float3 fEnv = NrdEnvironmentTerm(rf0, NoV, roughness);
+
+    diffuseFactor = (1.0f - fEnv) * albedo;
+    diffuseFactor = lerp(NRD_MATERIAL_FACTOR_MIN_SCALE.xxx, float3(1.0f, 1.0f, 1.0f), diffuseFactor);
+
+    specularFactor = fEnv;
+    specularFactor *= lerp(NRD_ROUGHNESS_FACTOR_MIN_SCALE.xxx, float3(1.0f, 1.0f, 1.0f), roughness);
+    specularFactor = lerp(NRD_MATERIAL_FACTOR_MIN_SCALE.xxx, float3(1.0f, 1.0f, 1.0f), specularFactor);
 }
 
 float NrdReblurGetHitDistanceNormalization(float viewZ, float4 hitDistParams, float roughness)

@@ -492,6 +492,7 @@ ID3D11UnorderedAccessView* NrdDenoiser::ResolveUAV(const nrd::ResourceDesc& res,
                                                      const NrdDenoisedOutputs& out) const
 {
     switch (res.type) {
+    case nrd::ResourceType::IN_MV:                   return out.motionVector;
     case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST: return out.diffuse;
     case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST: return out.specular;
     case nrd::ResourceType::TRANSIENT_POOL:

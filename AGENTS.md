@@ -91,10 +91,12 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 
 | 바인딩 | 리소스 |
 | --- | --- |
+| `b0` | `GlobalUB` |
 | `t0` | `g_denoisedDiffuse` |
 | `t1` | `g_denoisedSpecular` |
 | `t2` | `g_baseColorMetalness` |
 | `t3` | `g_emissive` |
+| `t4` | `g_normalRoughness` |
 | `u0` | `g_compositeOutput` |
 
 ### ToneMap (CS)

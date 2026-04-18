@@ -24,6 +24,7 @@ struct NrdGBufferInputs {
 struct NrdDenoisedOutputs {
     ID3D11UnorderedAccessView* diffuse;    // R16G16B16A16_FLOAT (denoised diffuse radiance)
     ID3D11UnorderedAccessView* specular;   // R16G16B16A16_FLOAT (denoised specular radiance)
+    ID3D11UnorderedAccessView* motionVector; // REBLUR temporal stabilization can patch IN_MV in-place
 };
 
 // -------------------------------------------------------

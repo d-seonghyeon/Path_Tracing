@@ -388,9 +388,25 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     diffuse  /= (float)SAMPLES_PER_PIXEL;
     specular /= (float)SAMPLES_PER_PIXEL;
 
-    // NOTE: result.diffuse already contains albedo from the Lambertian BRDF
-    // (kD * albedo / PI). Composite.hlsl does NOT multiply by albedo again,
-    // so no demodulation is needed here.
+    // NRD expects material-demodulated radiance so that dark albedo does not
+    // collapse temporal/spatial accumulation. Composite.hlsl re-applies the
+    // material factors after denoising (and also on the raw A/B path).
+    if (res.hitSurface) {
+        float3 viewDir = normalize(g_cameraPos - res.worldPos);
+        float3 diffuseFactor;
+        float3 specularFactor;
+        NrdMaterialFactors(
+            res.normal,
+            viewDir,
+            res.albedo,
+            res.metalness,
+            res.roughness,
+            diffuseFactor,
+            specularFactor);
+
+        diffuse /= max(diffuseFactor, NRD_EPS.xxx);
+        specular /= max(specularFactor, NRD_EPS.xxx);
+    }
 
     // -------------------------------------------------------
     // G-buffer 출력 (per-frame overwrite)

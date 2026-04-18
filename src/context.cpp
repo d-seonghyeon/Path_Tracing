@@ -1,4 +1,6 @@
 #include "context.h"
+
+#include <glm/ext/matrix_clip_space.hpp>
 #include <spdlog/spdlog.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image_write.h>
@@ -443,7 +445,7 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     m_cameraFront = glm::normalize(front);
     glm::vec3 right = glm::normalize(glm::cross(m_cameraFront, m_cameraUp));
     glm::mat4 view = glm::lookAtRH(m_cameraPos, m_cameraPos + m_cameraFront, m_cameraUp);
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 1000.0f);
+    glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(45.0f), (float)width / (float)height, 0.1f, 1000.0f);
     glm::mat4 currViewProj = proj * view;
     glm::mat4 prevViewProj = (m_frameCount == 0) ? currViewProj : m_prevViewProj;
 
@@ -521,6 +523,7 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         NrdDenoisedOutputs nrdOut = {};
         nrdOut.diffuse  = m_denoisedDiffuseUAV.Get();
         nrdOut.specular = m_denoisedSpecularUAV.Get();
+        nrdOut.motionVector = m_motionVectorUAV.Get();
 
         NrdCameraData nrdCam = {};
         nrdCam.viewMatrix     = view;
@@ -547,13 +550,17 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
             ? m_denoisedSpecularSRV.Get()
             : m_specularRadianceSRV.Get();
 
-        ID3D11ShaderResourceView *compSRVs[4] = {
+        auto gBuf = m_globalBuffer->GetBuffer();
+        context->CSSetConstantBuffers(0, 1, &gBuf);
+
+        ID3D11ShaderResourceView *compSRVs[5] = {
             diffSRV,                       // t0: diffuse
             specSRV,                       // t1: specular
             m_baseColorMetalnessSRV.Get(), // t2: albedo/metalness
             m_emissiveSRV.Get(),           // t3: emissive
+            m_normalRoughnessSRV.Get(),    // t4: normal/roughness
         };
-        context->CSSetShaderResources(0, 4, compSRVs);
+        context->CSSetShaderResources(0, 5, compSRVs);
 
         ID3D11UnorderedAccessView *compUAVs[1] = { m_compositeUAV.Get() };
         context->CSSetUnorderedAccessViews(0, 1, compUAVs, nullptr);
@@ -564,8 +571,8 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
 
         ID3D11UnorderedAccessView *nullUAV[1] = { nullptr };
         context->CSSetUnorderedAccessViews(0, 1, nullUAV, nullptr);
-        ID3D11ShaderResourceView *nullSRVs[4] = {};
-        context->CSSetShaderResources(0, 4, nullSRVs);
+        ID3D11ShaderResourceView *nullSRVs[5] = {};
+        context->CSSetShaderResources(0, 5, nullSRVs);
     }
 
     // -------------------------------------------------------

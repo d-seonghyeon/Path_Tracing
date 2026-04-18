@@ -8,7 +8,7 @@
 ## 0. Current Phase
 
 - Active phase: `Phase 3 - Quality tuning`
-- Detailed sub-phase: `P3-2 - double-albedo root cause fixed; runtime validation pending`
+- Detailed sub-phase: `P3-3 - NRD black-output audit + follow-up patches landed; semantic mismatch still unresolved`
 - Blocked: `No`
 - Branch: `feature/nrd-phase0`
 
@@ -68,26 +68,35 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Codex: diagnose why NRD REBLUR output is all-zero (black) for
-    non-emissive pixels even after 10s warm-up.
+[1] Claude: audit the remaining NRD input semantic mismatch, starting
+    with `IN_NORMAL_ROUGHNESS` / material demodulation, because the
+    latest raw-vs-denoised capture still shows an emissive-only result
+    after all of the following were already patched:
 
-    Suspected root causes (in priority order):
-    A. worldToViewMatrix / viewToClipMatrix convention: GLM column-major
-       memcpy'd directly into NRD CommonSettings — confirm NRD v4 expects
-       column-major (no transpose needed).
-    B. normHitDist = 0 for most pixels — confirm REBLUR can still produce
-       non-zero spatial output without valid hit distances.
-    C. YCoCg packing: PathTracer encodes manually with NrdLinearToYCoCg
-       before writing to IN_DIFF/SPEC_RADIANCE_HITDIST — confirm NRD v4
-       expects pre-packed YCoCg (not linear RGB).
-    D. motionVectorScale = 1/screenSize — confirm pixel→UV conversion
-       is correct for NRD v4.14.3 with isMotionVectorInWorldSpace=false.
+    A. `CommonSettings` matrices: NRD v4 expects column-major input, so
+       raw GLM `memcpy` is correct (no transpose needed there).
+    B. `motionVectorScale = 1 / screenSize`: correct for 2D screen-space
+       motion vectors with `isMotionVectorInWorldSpace = false`.
+    C. REBLUR expects pre-packed YCoCg radiance, and
+       `shader/NrdFrontend.hlsli` matches that contract.
+    D. REBLUR temporal stabilization writes `IN_MV` as a UAV, and the
+       DX11 wrapper now binds `m_motionVectorUAV` for that path.
+    E. The NRD-facing projection matrix is now explicit D3D-style
+       zero-to-one (`glm::perspectiveRH_ZO`).
+    F. A new demodulate/remodulate path was added:
+       `PathTracer.hlsl` divides diffuse/specular by NRD-style material
+       factors before packing, and `Composite.hlsl` multiplies them back
+       using `g_normalRoughness` + `g_baseColorMetalness`.
 
-    Key files: src/nrd_denoiser.cpp, shader/PathTracer.hlsl,
-               shader/NrdFrontend.hlsli
+    Despite A-F, the latest captures
+    (`build/capture_0_raw.png`, `build/capture_1_denoised.png`) still
+    show raw = normal noisy scene, denoised = almost entirely black
+    except emissives. Most likely next suspect: the exact semantics /
+    encoding of `IN_NORMAL_ROUGHNESS` (or the new material-factor path)
+    still do not match the embedded NRD DXBC configuration.
 ```
 
-Owner: Codex (root cause analysis + patch)
+Owner: Claude (semantic-mismatch root cause analysis)
 
 ---
 
@@ -95,7 +104,7 @@ Owner: Codex (root cause analysis + patch)
 
 ### Newly introduced
 
-- `shader/Composite.hlsl` - HDR composite pass: `diffuse + specular + emissive` (albedo already in BRDF output, no remodulation)
+- `shader/Composite.hlsl` - HDR composite pass that now re-applies NRD-style material factors before `diffuse + specular + emissive`
 - `shader/NrdFrontend.hlsli` - local NRD-compatible front-end helpers for radiance / hit-distance / normal packing
 - `GlobalUniforms.prevViewProj` / `currViewProj` - motion vector matrices
 - `Context` screen resources - 7 G-buffer textures + `m_compositeTexture` + `m_denoisedDiffuse/Specular`
@@ -120,6 +129,7 @@ Owner: Codex (root cause analysis + patch)
 - ShaderMake CLI mismatch is fixed: `NVIDIA-RTX/ShaderMake` (main) dropped `--useAPI` and uses `SHADERMAKE_FXC_PATH` instead of `FXC_PATH`. Both issues are patched in `build/dep_nrd-prefix/src/dep_nrd/CMakeLists.txt` and via `cmake/patch_nrd.cmake`.
 - `F1` only activates the denoise path when a usable backend actually exists; otherwise rendering stays on the raw G-buffer path and logs the stub status.
 - `nrd_denoiser.cpp` now sets `ReblurSettings.hitDistanceParameters` explicitly to match shader-side packing constants (`A=3, B=0.1, C=20, D=-25`).
+- Codex audited the black-output suspects on 2026-04-18: NRD v4.14.3 docs/source confirmed that column-major `CommonSettings` upload is correct, REBLUR does expect pre-packed YCoCg radiance, and `motionVectorScale = 1 / screenSize` is correct for 2D screen-space MVs. The one concrete integration bug found was elsewhere: REBLUR temporal stabilization writes `IN_MV` as a UAV, and the DX11 wrapper now binds `m_motionVectorUAV` for that path. Debug build passed after the patch, but a local PowerShell `Start-Process` `Path`/`PATH` collision blocked the short runtime smoke test.
 - First quality-tuning pass in `nrd_denoiser.cpp` biases REBLUR toward faster history rejection: `antilagSettings = { sigmaScale=3.0, sensitivity=2.0 }`, `maxAccumulatedFrameNum = 24`, `maxFastAccumulatedFrameNum = 4`, `diffuse/specularPrepassBlurRadius = 20/35`.
 - Runtime checks completed on 2026-04-18: Debug build passed, app stayed alive, `REBLUR_DIFFUSE_SPECULAR ready` logged, and `F1` still logged `Denoise OFF` / `Denoise ON` after the Phase 3 packing change.
 - Manual quality comparison completed on 2026-04-18: after camera movement, `F1=ON` produced a much cleaner image while `F1=OFF` remained heavily speckled on dark building faces. The current denoiser path is active and materially affecting output.
@@ -132,6 +142,7 @@ Owner: Codex (root cause analysis + patch)
 - A targeted startup-response tuning pass on 2026-04-18 (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`) did not materially improve the early near-black warm-up compared with the post-hit-distance-fix baseline.
 - A follow-up NEE audit on 2026-04-18 found that primary and indirect direct-light contributions were still carrying little or no representative hit distance. Local shader edits now pass `lightHitDist` out of `SampleDirectLight(...)` and choose a luminance-weighted representative hit distance for the diffuse/specular channels, which produced a visibly brighter settled static frame than the previous primary-hit-distance-only fix.
 - Root cause of persistent dark collapse identified on 2026-04-18: `SampleDirectLight` returns `(kD * albedo/PI + specular) * emission * NdotL / pdf`, so `result.diffuse` already contains albedo from the Lambertian BRDF. The old Composite formula `diffuse * albedo + specular + emissive` was double-multiplying albedo, making dark materials (albedo ~0.1) appear ~10x too dark. Fixed by changing Composite to `diffuse + specular + emissive` and removing the incorrect `diffuse / primaryAlbedo` demodulation from PathTracer.
+- Codex follow-up on 2026-04-18 added three more patches on top of the prior audit: `glm::perspectiveRH_ZO` for the NRD-facing projection, `IN_MV` UAV binding for REBLUR temporal stabilization, and a new demodulate/remodulate path (`PathTracer.hlsl` divides by NRD-style material factors, `Composite.hlsl` multiplies them back using `g_normalRoughness`). Debug build passed, automated `F1/F2` capture succeeded, but the newest pair (`build/capture_0_raw.png`, `build/capture_1_denoised.png`) still shows the denoised image collapsing to emissive-only black. Treat this as the current unresolved state.
 
 ### F2 Screenshot Capture (Phase 4 FLIP/SSIM)
 
@@ -161,9 +172,9 @@ No critical conflicts found. Details:
 
 ## 4. Open Questions
 
-1. Keep denoise input at `R16G16B16A16_FLOAT`, or promote specific signals later if quality requires it?
-2. When the real backend is wired, should resize-triggered reset also be logged visibly for debugging?
-3. `normalRoughness` currently uses a float texture while storing NRD-compatible packed values; keep this layout, or tighten it later to a more storage-efficient format after validation?
+1. Does the embedded NRD DXBC expect a stricter `IN_NORMAL_ROUGHNESS` resource format / semantic contract than our current `R16G16B16A16_FLOAT` + local oct-pack path?
+2. Is the new demodulate/remodulate path actually aligned with NRD's intended "radiance without material information" contract for this tracer, or is it over-correcting an already-demodulated signal?
+3. When the root cause is fixed, should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format later?
 
 ---
 
@@ -172,6 +183,8 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-18 | Codex       | P3-3 | Added `glm::perspectiveRH_ZO`, bound `IN_MV` as a UAV, and introduced a new NRD-style demodulate/remodulate path (`PathTracer.hlsl` + `Composite.hlsl` + `NrdFrontend.hlsli`); Debug build passed, automated F1/F2 capture succeeded, but `build/capture_1_denoised.png` is still almost entirely black except emissives, so the handoff target is now the remaining semantic mismatch (most likely `IN_NORMAL_ROUGHNESS` and/or material-factor handling)
+2026-04-18 | Codex       | P3-3 | Audited A-D against local NRD v4.14.3 docs/source: column-major CommonSettings upload is correct, REBLUR does expect YCoCg-packed radiance, and `motionVectorScale = 1/screenSize` is correct for 2D screen-space MVs; found and patched a separate real DX11 bug where REBLUR temporal stabilization writes `IN_MV` as a UAV but our wrapper had been binding null there; Debug build passed, runtime smoke test blocked by a local PowerShell `Path`/`PATH` collision
 2026-04-18 | Claude Code | P3-3 | NRD black output bug: confirmed emissive-only pattern persists even after bounce-0 emitter removal; Codex delegated for root-cause analysis (matrix convention / YCoCg / normHitDist / MV scale)
 2026-04-18 | Claude Code | P3-3 | Remove bounce=0 emitter hit from NRD diffuse input (double-counted via g_emissive); also set m_denoiseEnabled default=false; build succeeded (commit 628e352)
 2026-04-18 | Claude Code | P4-1 | Added F2 screenshot capture (stb_image_write, staging readback); `capture_N_raw.png` / `capture_N_denoised.png` saved to CWD; enables Phase 4 FLIP/SSIM offline comparison
