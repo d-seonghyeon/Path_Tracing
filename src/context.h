@@ -137,7 +137,8 @@ private:
     glm::mat4 m_prevView     { 1.0f };
 
     // A/B 토글 — F1 로 denoise on/off (Phase 4)
-    bool m_denoiseEnabled { true };
+    // 기본값 false: 시작 시 raw(노이즈) 씬 즉시 표시, F1로 denoiser 켜면 warm-up 시작
+    bool m_denoiseEnabled { false };
 
     // F2 스크린샷 캡처 (Phase 4 FLIP/SSIM 비교용)
     ComPtr<ID3D11Device> m_device;

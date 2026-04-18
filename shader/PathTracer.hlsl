@@ -193,10 +193,11 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
         // Emitter 히트
         // -------------------------------------------------------
         if (IsEmitter(hit.material)) {
-            float3 emitContrib;
             if (bounce == 0) {
-                emitContrib = hit.material.emissive * throughput;
-                result.diffuse += emitContrib;
+                // bounce=0 직접 emitter 히트: result.emissive에 이미 저장됨 (→ g_emissive → Composite).
+                // NRD diffuse 채널에 넣으면 dynamic range가 18:1 이상이 되어
+                // REBLUR anti-lag이 indirect diffuse를 0으로 collapse함 → 검정 버그.
+                // 따라서 여기서는 diffuse에 추가하지 않음.
             } else {
                 int hitLightIdx = FindHitLight(hit.p, hit.normal);
                 float w = 1.0f;
@@ -206,7 +207,7 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
                         ? 1.0f
                         : PowerHeuristic(prevBrdfPdf, lightPdf);
                 }
-                emitContrib = hit.material.emissive * throughput * w;
+                float3 emitContrib = hit.material.emissive * throughput * w;
                 if (pathTypeSet && pathIsSpecular) {
                     result.specular += emitContrib;
                     float candidateSpecHitDist = specularFirstHitDist > 0.0f ? specularFirstHitDist : hit.t;
