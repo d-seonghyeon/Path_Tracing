@@ -107,6 +107,7 @@ bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
     // 5. NrdDenoiser (Phase 2 — NRD SDK 미설치 시 stub으로 동작)
     m_nrdDenoiser = NrdDenoiser::Create(device, WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!m_nrdDenoiser) return false;
+    SPDLOG_INFO("NrdDenoiser backend status: {}", m_nrdDenoiser->GetBackendStatusLabel());
 
     // 6. 모델 (절차적 씬 사용)
     m_model = nullptr;
@@ -467,7 +468,9 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     //   m_denoiseEnabled=false 시 패스 전체 스킵 (A/B 토글 F1).
     //   NRD SDK 미연결 시 G-buffer를 denoised 텍스처로 그대로 복사(stub).
     // -------------------------------------------------------
-    if (m_denoiseEnabled) {
+    const bool useDenoiser = m_denoiseEnabled && m_nrdDenoiser && m_nrdDenoiser->HasUsableBackend();
+
+    if (useDenoiser) {
         NrdGBufferInputs nrdIn = {};
         nrdIn.diffuseRadiance  = m_diffuseRadianceSRV.Get();
         nrdIn.specularRadiance = m_specularRadianceSRV.Get();
@@ -479,7 +482,12 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         nrdOut.diffuse  = m_denoisedDiffuseUAV.Get();
         nrdOut.specular = m_denoisedSpecularUAV.Get();
 
-        m_nrdDenoiser->Denoise(context, nrdIn, nrdOut, m_frameCount);
+        NrdCameraData nrdCam = {};
+        nrdCam.viewMatrix     = view;
+        nrdCam.projMatrix     = proj;
+        nrdCam.prevViewMatrix = (m_frameCount == 0) ? view : m_prevView;
+
+        m_nrdDenoiser->Denoise(context, nrdIn, nrdOut, nrdCam, m_frameCount);
     }
 
     // -------------------------------------------------------
@@ -488,10 +496,10 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     //   m_denoiseEnabled=false → 원본 G-buffer 직접 사용 (A/B 레퍼런스)
     // -------------------------------------------------------
     {
-        ID3D11ShaderResourceView* diffSRV = m_denoiseEnabled
+        ID3D11ShaderResourceView* diffSRV = useDenoiser
             ? m_denoisedDiffuseSRV.Get()
             : m_diffuseRadianceSRV.Get();
-        ID3D11ShaderResourceView* specSRV = m_denoiseEnabled
+        ID3D11ShaderResourceView* specSRV = useDenoiser
             ? m_denoisedSpecularSRV.Get()
             : m_specularRadianceSRV.Get();
 
@@ -517,7 +525,7 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     // -------------------------------------------------------
-    // 패스 3: ToneMap — Composite HDR → LDR 출력
+    // 패스 4: ToneMap — Composite HDR → LDR 출력
     // -------------------------------------------------------
     {
         // t10: Composite 결과를 SRV로 읽기
@@ -541,6 +549,7 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     m_prevViewProj = currViewProj;
+    m_prevView     = view;
 
     // 프레임 카운터 증가
     m_frameCount++;
@@ -583,7 +592,13 @@ void Context::ProcessKeyboard(float deltaTime) {
     // F1: A/B 토글 — denoise on/off (하위 비트 = 이번 호출 전까지 눌렸는지 여부)
     if (GetAsyncKeyState(VK_F1) & 0x0001) {
         m_denoiseEnabled = !m_denoiseEnabled;
-        SPDLOG_INFO("Denoise {}", m_denoiseEnabled ? "ON" : "OFF (raw G-buffer)");
+        const bool backendReady = m_nrdDenoiser && m_nrdDenoiser->HasUsableBackend();
+        if (m_denoiseEnabled && !backendReady) {
+            SPDLOG_INFO("Denoise requested, but NRD backend is unavailable ({}). Raw G-buffer path will be used until Phase 2 wiring is complete.",
+                        m_nrdDenoiser ? m_nrdDenoiser->GetBackendStatusLabel() : "no-denoiser");
+        } else {
+            SPDLOG_INFO("Denoise {}", m_denoiseEnabled ? "ON" : "OFF (raw G-buffer)");
+        }
     }
 
     if (moved) {

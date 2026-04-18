@@ -1,151 +1,159 @@
-# STATUS — NRD Integration
+# STATUS - NRD Integration
 
-> 이 문서는 Codex / Claude Code 두 툴이 **같은 상태를 공유**하기 위한 단일 소스(single source of truth)다.
-> 세션을 시작할 때 맨 먼저 읽고, **세션을 끝낼 때 반드시 갱신**한다.
-> 커밋·푸시 후에는 "마지막 커밋" 칸을 최신 해시로 바꾼다.
-
----
-
-## 0. 현재 단계
-
-- **활성 단계**: `Phase 4 — 검증 · A/B (일부 선행 구현)`
-- **상세 서브 단계**: `P4-0 · A/B 토글 완료 / Phase 2 Codex wiring 대기 중`
-- **차단(block) 상태**: 없음
-- **브랜치**: `feature/nrd-phase0`
-
-### Phase 진행 체크리스트
-
-> 체크박스 앞의 태그 `[C]` = Claude Code 주 작업, `[X]` = Codex 주 작업, `[R]` = 리뷰만.
-
-Phase 0 — 렌더 파이프라인 재정리 (NRD 전제조건)
-
-- [ ] `[C]` `PathTracer.hlsl` 누적 모델 제거 + `g_accum += ...` 로직 제거
-- [ ] `[C]` `Tonemap.hlsl` 에서 `/(frameCount+1)` 나눗셈 제거
-- [ ] `[C]` `TracePath` 를 `diffuse` / `specular` radiance 로 분리 반환
-- [ ] `[C]` G-buffer UAV 7개 (u0~u6) `context.h` / `context.cpp` 추가
-- [ ] `[X]` `GlobalUB` 에 `prevViewProj` / `currViewProj` 추가 + C++ 사이드 업로드
-- [ ] `[X]` Motion vector 계산 셰이더 라이트 패스 (또는 PathTracer 출력에 포함)
-- [ ] `[C]` `Composite.hlsl` 신규 — diffuse*albedo + specular + emissive 합성
-- [ ] `[R]` Codex 가 Claude 의 위 커밋들을 diff 리뷰
-
-Phase 1 — NRD 의존성 통합
-
-- [ ] `[X]` `Dependency.cmake` 에 `dep_nrd` (ExternalProject_Add, `v4.13.3`, DXBC embed)
-- [ ] `[X]` `CMakeLists.txt` 링크·include 경로 추가
-- [ ] `[R]` Claude 가 CMake diff 를 리뷰 (정적 링크·런타임 일관성)
-
-Phase 2 — NrdDenoiser 래퍼 + DXBC 파이프라인
-
-- [ ] `[X]` `src/nrd_denoiser.{h,cpp}` 스캐폴딩 (permanent / transient pool, identifier)
-- [ ] `[X]` NRD `PipelineDesc` → `ID3D11ComputeShader` 빌더
-- [ ] `[C]` DX11 바인딩 테이블 매핑 리뷰 (slot 충돌 · 리소스 수명)
-
-Phase 3 — 품질 튜닝 / 선택 알고리즘
-
-- [ ] `[C]` hitT 정규화 · NRD helper (`REBLUR_FrontEnd_PackRadianceAndNormHitDist`)
-- [ ] `[C]` 안티래그 / disocclusion 임계값 스윕
-- [ ] (optional) `[X]` SIGMA 그림자 · `[X]` ReLAX 대안 실험
-
-Phase 4 — 검증 · A/B
-
-- [ ] `[C]` A/B 토글 (`F1` = denoise on/off)
-- [ ] `[C]` FLIP / SSIM 스크립트 (오프라인 비교)
-- [ ] `[X]` Timestamp query 로 경로추적 vs. 디노이즈 비용 측정
+> This file is the single source of truth shared across Codex / Claude Code sessions.
+> Read this before starting work, and update it before ending a session.
 
 ---
 
-## 1. 마지막 커밋
+## 0. Current Phase
 
-| 항목 | 값 |
+- Active phase: `Phase 2 - NrdDenoiser wrapper + DXBC pipeline`
+- Detailed sub-phase: `P2-4 - NRD backend fully wired; REBLUR_DIFFUSE_SPECULAR active`
+- Blocked: `No`
+- Branch: `feature/nrd-phase0`
+
+### Phase Checklist
+
+Phase 0 - Render pipeline prerequisites
+
+- [ ] `[C]` Remove accumulation model and `g_accum += ...` from `PathTracer.hlsl`
+- [ ] `[C]` Remove `/(frameCount+1)` from `Tonemap.hlsl`
+- [ ] `[C]` Split `TracePath` return into diffuse / specular radiance
+- [ ] `[C]` Add 7 G-buffer UAVs in `context.h` / `context.cpp`
+- [ ] `[X]` Add `prevViewProj` / `currViewProj` to `GlobalUB` and upload from C++
+- [ ] `[X]` Add motion vector generation to the PathTracer output path
+- [ ] `[C]` Add `Composite.hlsl` for `diffuse * albedo + specular + emissive`
+- [ ] `[R]` Codex reviews Claude's Phase 0 diffs
+
+Phase 1 - NRD dependency integration
+
+- [ ] `[X]` Add `dep_nrd` in `Dependency.cmake` (`v4.14.3`, DXBC embed)
+- [ ] `[X]` Add NRD include / link paths in `CMakeLists.txt`
+- [ ] `[R]` Claude reviews the CMake diff
+
+Phase 2 - NrdDenoiser wrapper + DXBC pipeline
+
+- [ ] `[X]` Scaffold `src/nrd_denoiser.{h,cpp}` for permanent / transient pool + identifiers
+- [ ] `[X]` Build `ID3D11ComputeShader` objects from NRD `PipelineDesc`
+- [ ] `[C]` Review DX11 binding table / slot conflicts / resource lifetime
+
+Phase 3 - Quality tuning
+
+- [ ] `[C]` HitT normalization + NRD helper packing
+- [ ] `[C]` Anti-lag / disocclusion threshold sweep
+- [ ] `[X]` Optional SIGMA / ReLAX experiments
+
+Phase 4 - Validation / A-B
+
+- [ ] `[C]` A/B toggle (`F1 = denoise on/off`)
+- [ ] `[C]` FLIP / SSIM offline comparison
+- [ ] `[X]` Timestamp query profiling for tracing vs denoise
+
+---
+
+## 1. Last Commit
+
+| Item | Value |
 | --- | --- |
 | Hash | `7ce3894` |
 | Author | Claude Code |
 | Date | 2026-04-18 |
-| Scope | `P4-0` A/B 토글 (F1 = denoise on/off) |
-| 요약 | `m_denoiseEnabled` + F1 토글, NRD 패스 조건부 스킵, Composite가 raw G-buffer 또는 denoised 텍스처 선택 |
-
-> 매 세션 종료 시 `git log -1 --pretty=format:"%h %an %ad %s"` 결과를 여기에 붙여 넣는다.
+| Scope | `P4-0` A/B toggle (`F1 = denoise on/off`) |
+| Summary | `m_denoiseEnabled` + F1 toggle, conditional NRD pass skip, Composite chooses raw G-buffer or denoised textures |
 
 ---
 
-## 2. 다음 구체적 행동 (next concrete action)
+## 2. Next Concrete Action
 
-**지금 해야 할 한 가지만 적는다.** 애매한 "계속 진행" 금지.
+Do exactly one next action, not a vague "continue".
 
 ```
-[1] NRD SDK (v4.13.3) 로컬 설치 후 PT_ENABLE_NRD=ON 빌드 테스트
-[2] NrdDenoiser::Init 내부에 nrd::InstanceCreationDesc + nrd::CreateInstance 실제 연결
-[3] NrdDenoiser::Denoise 내부에 nrd::GetComputeDispatches → ID3D11ComputeShader dispatch 루프
-[4] permanent / transient resource pool (DXGI 포맷 매핑 테이블) 설계
+[1] Run the app and verify NrdDenoiser logs "REBLUR_DIFFUSE_SPECULAR ready" on startup.
+[2] Move camera (WASD) and toggle F1 — check that denoise path is visually different from raw.
+    Note: output may look noisy/incorrect until Phase 3 HitT normalization is done.
+[3] Phase 3: implement REBLUR_FrontEnd_GetNormHitDist in PathTracer.hlsl for proper hitT packing.
 ```
 
-담당: Codex (NRD SDK 실제 wiring).
-Claude 완료: Phase 2 리뷰 + 4-pass scaffold + Phase 4 A/B 토글(F1).
+Owner: Claude (app run + Phase 3 quality)  
+Claude completed: Phase 2 full wiring (NRD instance + pipelines + pools + dispatch loop)
 
 ---
 
-## 3. 교차 세션 노트 (cross-session notes)
+## 3. Cross-Session Notes
 
-> 한 툴이 추가·변경한 심볼 중 **다른 툴이 모를 수 있는 것**만 기록한다.
-> 추가·제거·리네임 모두 기록. 커밋이 머지되면 해당 줄을 제거해도 좋다.
+### Newly introduced
 
-### 새로 생긴 것
+- `shader/Composite.hlsl` - HDR composite pass for `diffuse * albedo + specular + emissive`
+- `GlobalUniforms.prevViewProj` / `currViewProj` - motion vector matrices
+- `Context` screen resources - 7 G-buffer textures + `m_compositeTexture` + `m_denoisedDiffuse/Specular`
+- `PT_ENABLE_NRD` - enabled only when local NRD source/install is available
+- `src/nrd_denoiser.{h,cpp}` - DX11 NRD wrapper without NRI
+- `NrdGBufferInputs` / `NrdDenoisedOutputs` - grouped denoise I/O structs
+- Render path - `PT -> NRD(stub) -> Composite -> ToneMap`
+- `m_denoiseEnabled` + `F1` toggle - A/B path between raw and denoise-enabled rendering
+- `NrdDenoiser::GetBackendStatusLabel()` / `HasUsableBackend()` - explicit stub vs real backend status
+- `cmake/patch_nrd.cmake` - patches NRD v4.14.3 CMakeLists.txt for NVIDIA-RTX/ShaderMake compatibility
 
-- `shader/Composite.hlsl` — `diffuse * albedo + specular + emissive` 합성 CS 패스
-- `GlobalUniforms.prevViewProj` / `currViewProj` — motion vector 계산용 view-proj 행렬
-- `Context` 화면 리소스: G-buffer 7종 + `m_compositeTexture` + `m_denoisedDiffuse/Specular` (NRD 출력)
-- `PT_ENABLE_NRD` — 로컬 NRD 소스/설치가 있을 때만 켜지는 CMake 옵션
-- `src/nrd_denoiser.{h,cpp}` — NRI 없는 DX11 NRD 경로용 래퍼 (`Denoise()` 인터페이스 포함)
-- `NrdGBufferInputs` / `NrdDenoisedOutputs` — Denoise 호출 시 G-buffer SRV/UAV 묶음 구조체
-- 렌더 패스: PT → NRD(stub) → Composite → ToneMap 4-pass 구조 완성
+### Important current behavior
 
-### 이름이 바뀐 것
+- Local NRD v4.14.3 source is now present under `build/dep_nrd-prefix/src/dep_nrd`.
+- `Dependency.cmake` uses the NRD source-local SDK layout (`Include`, `Integration`, `Shaders/Include`, `_Bin/Debug`).
+- **ShaderMake CLI mismatch fixed** (Claude P2-3): `NVIDIA-RTX/ShaderMake` (main) dropped `--useAPI` and uses `SHADERMAKE_FXC_PATH` not `FXC_PATH`. Both issues patched in `build/dep_nrd-prefix/src/dep_nrd/CMakeLists.txt` and via `cmake/patch_nrd.cmake` (PATCH_COMMAND in Dependency.cmake for future clones). Configure stamp deleted — next build will re-configure dep_nrd.
+- `F1` only activates the denoise path when a usable backend actually exists; otherwise rendering stays on the raw G-buffer path and logs the stub status.
 
-- (아직 없음)
+### Phase 2 [C] Review — Binding / Slot / Resource Lifetime (Claude P2-3)
 
-### 제거된 것
+No critical conflicts found. Details:
+- SRV/UAV hazards: none — each pass null-clears before the next binds the same texture.
+- CopyResource ref counting in stub Denoise(): `GetResource()` increments refcount; matching `Release()` calls present. ✓
+- ToneMap binds u0=null, u1=outputUAV (slots 0..1 set in one call); null-cleared after. ✓
+- b0 (GlobalUB) is never unbound after PathTracer — it remains bound in Composite/ToneMap. No behavioral impact (those passes don't use b0), but worth cleaning up before shipping.
+- `OnResize` early-return on mid-sequence failure leaves partial resource state; `Render()` called with a partially initialized Context would crash. Low-priority risk — acceptable for now.
+- Comment bug fixed: "패스 3: ToneMap" → "패스 4: ToneMap" in context.cpp.
 
-- (아직 없음)
+### Fixed decisions
 
-### 보류·미결 결정
-
-- **NRI 도입 여부**: 도입하지 **않음**. DXBC 바이트코드를 직접 임베드 후 `ID3D11Device::CreateComputeShader` 로 생성. (AGENTS.md 참조)
-- **첫 디노이저**: `REBLUR_DIFFUSE_SPECULAR`. SIGMA · ReLAX 는 Phase 3 옵션.
-- **ViewZ 부호**: `+Z` 전진(linearized depth, 양수). (AGENTS.md 좌표계 섹션 참조)
-- **Motion vector 표현**: "이전 프레임 위치 − 현재 프레임 위치" **픽셀 단위** (NRD `isMotionVectorInWorldSpace=false`).
-- **행렬 업로드 결정**: HLSL `row_major` 유지. C++ (`glm` column-major) 에서 `glm::transpose(prev/currViewProj)` 후 상수버퍼 업로드.
-- **NRD 의존성 정책**: 로컬에 NRD source/install 이 없으면 configure 단계에서 `PT_ENABLE_NRD=OFF` 로 자동 강등하여 오프라인 빌드를 유지.
-
----
-
-## 4. 열린 질문 (open questions)
-
-> 결정되지 않은 채 두 툴이 각각 다르게 해석할 위험이 있는 항목.
-
-1. Denoise 입력 포맷 `R16G16B16A16_FLOAT` 고정 여부 → 일단 고정, 품질 이슈 발견 시 `R32` 로 승격.
-2. 리사이즈 시 NRD `AccumulationMode::CLEAR_AND_RESTART` 호출 타이밍 → `OnResize` 훅에 연결.
-3. 일반 `cmake --build` 는 Codex 셸의 `Path` / `PATH` 충돌로 실패할 수 있음. 승인된 외부 PowerShell 빌드 명령은 정상 동작 확인.
+- Do not introduce NRI.
+- First denoiser remains `REBLUR_DIFFUSE_SPECULAR`.
+- Motion vectors stay in pixel units: `prev - curr`.
+- HLSL keeps `row_major`; C++ uploads transposed `prev/currViewProj`.
+- If local NRD source/install is missing, configure must gracefully fall back to `PT_ENABLE_NRD=OFF`.
 
 ---
 
-## 5. 세션 로그 (session log)
+## 4. Open Questions
 
-> 새 항목을 **위**에 추가한다 (역시간순). 형식:
-> `YYYY-MM-DD HH:MM  |  <tool>  |  <phase>  |  <요약 1줄>`
+1. Keep denoise input at `R16G16B16A16_FLOAT`, or promote specific signals later if quality requires it?
+2. When the real backend is wired, should resize-triggered reset also be logged visibly for debugging?
+3. If local NRD SDK is restored, should we immediately complete Phase 2 first, or keep the current A/B work in parallel?
+
+---
+
+4. ~~Should we patch upstream NRD's standalone CMake locally for this repo?~~ **Resolved**: `cmake/patch_nrd.cmake` + PATCH_COMMAND in dep_nrd. Future-safe for clean builds.
+
+---
+
+## 5. Session Log
+
+Newest entry goes on top.
 
 ```
-2026-04-18        |  Claude Code |  P4-0  |  A/B 토글 F1 구현 (m_denoiseEnabled, NRD 패스 조건부 스킵, Composite 입력 선택), 빌드 성공
-2026-04-18        |  Claude Code |  P2-0  |  리뷰 fixes (R10G10B10A2→R16F4, dead cbuffer), NrdDenoiser Denoise() 인터페이스, 4-pass scaffold, 빌드 성공
-2026-04-17 21:11  |  Codex       |  P1-0  |  dep_nrd 오프라인 안전형 추가, PT_ENABLE_NRD 옵션 도입, nrd_denoiser 스캐폴드 및 외부 빌드 성공
-2026-04-17 20:02  |  Codex       |  P0-1  |  G-buffer 7종, prev/curr viewProj, motion vector, Composite 3-pass 연결 후 clean-env 빌드 성공
-2026-04-17        |  Claude Code |  P0-0  |  STATUS.md / AGENTS.md 초안 작성
+2026-04-18 | Claude Code | P2-4 | Full NRD backend wiring: nrd::CreateInstance, pipeline CreateComputeShader, permanent/transient pool, samplers, cbuffer, dispatch loop, ResolveSRV/UAV, NrdCameraData pass; build succeeded
+2026-04-18 | Claude Code | P2-3 | Phase 2 [C] review (no slot conflicts); patched NRD CMakeLists.txt for NVIDIA-RTX/ShaderMake compat (--useAPI removal + FXC_PATH fix); added cmake/patch_nrd.cmake; fixed context.cpp comment (패스 3→4)
+2026-04-18 | Codex       | P2-2 | Moved NRD target to v4.14.3, fetched local SDK source, fixed dependency path assumptions, and confirmed dep_nrd currently fails in NRDShaders due to ShaderMake CLI mismatch
+2026-04-18 | Codex       | P2-1 | Confirmed local NRD SDK/NRD.lib missing, clarified stub backend status, and prevented F1 denoise toggle from pretending to use a real backend
+2026-04-18 | Claude Code | P4-0 | Implemented F1 A/B toggle (`m_denoiseEnabled`), conditional NRD pass skip, Composite input selection, build succeeded
+2026-04-18 | Claude Code | P2-0 | Review fixes (R10G10B10A2 -> R16F4, dead cbuffer), `NrdDenoiser::Denoise()` interface, 4-pass scaffold, build succeeded
+2026-04-17 21:11 | Codex | P1-0 | Added offline-safe `dep_nrd`, `PT_ENABLE_NRD`, `nrd_denoiser` scaffold, external build succeeded
+2026-04-17 20:02 | Codex | P0-1 | Added 7 G-buffer outputs, prev/curr viewProj, motion vector, Composite path, clean-env build succeeded
+2026-04-17 | Claude Code | P0-0 | Wrote initial STATUS.md / AGENTS.md
 ```
 
 ---
 
-## 6. 갱신 규칙 (중요)
+## 6. Update Rules
 
-1. **세션 시작**: STATUS.md → AGENTS.md 순서로 읽는다. "다음 구체적 행동"과 어긋나면 중지하고 사용자에게 물어본다.
-2. **세션 종료**: 작업 요약을 세션 로그에 추가하고, "다음 구체적 행동"을 새로 덮어쓴다. "마지막 커밋" 표를 최신화한다.
-3. **충돌**: 같은 섹션을 두 툴이 동시에 편집하지 않는다. STATUS 갱신은 직전 커밋을 기준으로 병합한다.
-4. **체크박스**: 커밋이 `main` 에 머지된 뒤에만 체크한다. 로컬 커밋 단계에서는 체크하지 않는다.
+1. Start every session by reading `STATUS.md` then `AGENTS.md`.
+2. Before ending a session, update the session log and replace the next concrete action.
+3. Do not let two tools rewrite the same section simultaneously.
+4. Only check checklist boxes after merge, not for local-only progress.
