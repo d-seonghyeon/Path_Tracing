@@ -8,7 +8,7 @@
 ## 0. Current Phase
 
 - Active phase: `Phase 3 - Quality tuning`
-- Detailed sub-phase: `P3-2 - packing validated visually; input semantics under audit`
+- Detailed sub-phase: `P3-2 - double-albedo root cause fixed; runtime validation pending`
 - Blocked: `No`
 - Branch: `feature/nrd-phase0`
 
@@ -68,13 +68,14 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Run app and verify F1=ON (denoise) now shows correct brightness on building walls.
-    If building walls are still near-black, the scene lighting (light intensity / sky ambient) is the root cause — increase emission values in the city scene.
-    If F1=ON is bright but over-blurred, tune REBLUR spatial parameters.
+[1] Run the app and compare F1=OFF vs F1=ON brightness on building walls.
+    Expected: both are now brighter than before (no more double-albedo collapse).
+    If still near-black: the scene lights are too weak — increase emission values in MakeCityScene().
+    If F1=ON is bright but over-blurred: tune REBLUR spatial parameters.
 ```
 
 Owner: Claude Code
-Claude Code completed: Reverted incorrect primaryAlbedo demodulation; changed Composite from `diffuse * albedo + specular + emissive` to `diffuse + specular + emissive` because result.diffuse already contains BRDF albedo. Build succeeded.
+Claude Code completed: Root cause diagnosed (double albedo multiplication); Composite changed to `diffuse + specular + emissive`; demodulation patch reverted; build succeeded.
 
 ---
 
@@ -82,7 +83,7 @@ Claude Code completed: Reverted incorrect primaryAlbedo demodulation; changed Co
 
 ### Newly introduced
 
-- `shader/Composite.hlsl` - HDR composite pass for `diffuse * albedo + specular + emissive`
+- `shader/Composite.hlsl` - HDR composite pass: `diffuse + specular + emissive` (albedo already in BRDF output, no remodulation)
 - `shader/NrdFrontend.hlsli` - local NRD-compatible front-end helpers for radiance / hit-distance / normal packing
 - `GlobalUniforms.prevViewProj` / `currViewProj` - motion vector matrices
 - `Context` screen resources - 7 G-buffer textures + `m_compositeTexture` + `m_denoisedDiffuse/Specular`
@@ -98,7 +99,7 @@ Claude Code completed: Reverted incorrect primaryAlbedo demodulation; changed Co
 - `cmake/patch_nrd.cmake` - patches NRD v4.14.3 CMakeLists.txt for NVIDIA-RTX/ShaderMake compatibility
 - `PathTracer.hlsl` now packs diffuse/specular with REBLUR-compatible normalized hit distance and YCoCg radiance
 - `PathTracer.hlsl` now packs normal/roughness with an NRD-compatible encoding layout
-- `Composite.hlsl` now decodes packed YCoCg radiance back to linear RGB; formula changed to `diffuse + specular + emissive` (no albedo multiply — albedo already in BRDF output)
+- `Composite.hlsl` decodes YCoCg radiance back to linear RGB; formula is `diffuse + specular + emissive` (NOT `diffuse * albedo + ...`)
 
 ### Important current behavior
 
@@ -118,8 +119,7 @@ Claude Code completed: Reverted incorrect primaryAlbedo demodulation; changed Co
 - Input audit on 2026-04-18 found a real REBLUR semantic mismatch: `PathTracer.hlsl` had been feeding the primary camera-hit distance into `IN_DIFF_RADIANCE_HITDIST` / `IN_SPEC_RADIANCE_HITDIST`, even though NRD's own `NRD.hlsli` explicitly says primary hit distance must be ignored. A first fix now feeds secondary-path hit distance estimates instead, which improved the fully-collapsed static image somewhat, but the denoised image still spends time near-black before settling.
 - A targeted startup-response tuning pass on 2026-04-18 (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`) did not materially improve the early near-black warm-up compared with the post-hit-distance-fix baseline.
 - A follow-up NEE audit on 2026-04-18 found that primary and indirect direct-light contributions were still carrying little or no representative hit distance. Local shader edits now pass `lightHitDist` out of `SampleDirectLight(...)` and choose a luminance-weighted representative hit distance for the diffuse/specular channels, which produced a visibly brighter settled static frame than the previous primary-hit-distance-only fix.
-- A longer static probe on 2026-04-18 (`long_probe_4s.png`, `long_probe_8s.png`, `long_probe_12s.png`) suggests the issue is not just a short warm-up: the 4s and 8s frames still looked similarly over-dark before the latest local patch.
-- There is now one additional local-only, unvalidated patch in `shader/PathTracer.hlsl`: diffuse radiance is demodulated by the primary-hit albedo before packing, because `Composite.hlsl` already applies `diffuse * baseColor + specular + emissive`, which otherwise double-multiplies the primary albedo and can explain the persistent dark collapse. This patch has been written but NOT yet rebuilt or runtime-checked.
+- Root cause of persistent dark collapse identified on 2026-04-18: `SampleDirectLight` returns `(kD * albedo/PI + specular) * emission * NdotL / pdf`, so `result.diffuse` already contains albedo from the Lambertian BRDF. The old Composite formula `diffuse * albedo + specular + emissive` was double-multiplying albedo, making dark materials (albedo ~0.1) appear ~10x too dark. Fixed by changing Composite to `diffuse + specular + emissive` and removing the incorrect `diffuse / primaryAlbedo` demodulation from PathTracer.
 
 ### Phase 2 [C] Review - Binding / Slot / Resource Lifetime
 
@@ -153,12 +153,12 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
-2026-04-18 | Claude Code | P3-2 | Diagnosed root cause: result.diffuse already contains BRDF albedo (kD*albedo/PI from SampleDirectLight), so Composite `diffuse*albedo` was double-multiplying; reverted demodulation patch; changed Composite to `diffuse + specular + emissive`; build succeeded
-2026-04-18 | Claude Code | P3-2 | Built primary-albedo diffuse demodulation patch (PathTracer.hlsl `diffuse /= primaryAlbedo` before NRD packing); Debug build succeeded, shader sync confirmed; runtime validation pending
+2026-04-18 | Claude Code | P3-2 | Diagnosed double-albedo root cause: SampleDirectLight already bakes albedo into BRDF output; Composite `diffuse*albedo` was double-multiplying; changed to `diffuse+specular+emissive`; reverted primaryAlbedo demodulation; build succeeded (commit 6187d9a)
+2026-04-18 | Claude Code | P3-2 | Built primary-albedo diffuse demodulation patch (PathTracer.hlsl `diffuse /= primaryAlbedo` before NRD packing); user reported still dark; patch reverted in next step
 2026-04-18 | Codex       | P3-2 | Prepared a longer static timing probe (4s / 8s / 12s); the pre-demod frames still looked similarly dark at 4s and 8s, so the issue is likely deeper than short warm-up alone
 2026-04-18 | Codex       | P3-2 | Added luminance-weighted representative hit-distance tracking for direct/NEE contributions and passed `lightHitDist` out of `SampleDirectLight(...)`; the settled static frame looked brighter than the prior primary-hit-distance-only baseline
 2026-04-18 | Codex       | P3-2 | Wrote an unvalidated primary-albedo diffuse demodulation patch in `PathTracer.hlsl` after noticing `Composite.hlsl` already multiplies by `baseColor`; next session must rebuild and verify this before drawing conclusions
-2026-04-18 | Codex       | P3-2 | Fixed one real REBLUR input bug by removing primary hit distance from the packed radiance-hit-distance path; static denoised output improved, but the image still warms up from near-black over about 1-2 seconds
+2026-04-18 | Codex       | P3-2 | Fixed one real REBLUR input bug by removing primary hit distance from the packed radiance-hit-distance path; static denoised output improved, but the denoised image still spends time near-black before settling
 2026-04-18 | Codex       | P3-2 | Tried a targeted startup-response tweak (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`), but the early near-black warm-up remained materially similar
 2026-04-18 | Codex       | P3-2 | Tried a third REBLUR sweep with looser spatial rejection (`minHitDistanceWeight`, lobe/roughness fraction, plane sensitivity), but capture output stayed materially similar to the second sweep; next step should audit denoiser inputs instead of more blind tuning
 2026-04-18 | Codex       | P3-2 | Tried a second REBLUR sweep to recover dark detail (`antilag` 3.5/2.5, history 28/5, prepass blur 24/42); build and capture succeeded, but dark-scene detail still did not recover enough
