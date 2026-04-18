@@ -22,7 +22,7 @@ Phase 0 - Render pipeline prerequisites
 - [ ] `[C]` Add 7 G-buffer UAVs in `context.h` / `context.cpp`
 - [ ] `[X]` Add `prevViewProj` / `currViewProj` to `GlobalUB` and upload from C++
 - [ ] `[X]` Add motion vector generation to the PathTracer output path
-- [ ] `[C]` Add `Composite.hlsl` for `diffuse * albedo + specular + emissive`
+- [ ] `[C]` Add `Composite.hlsl` for `diffuse + specular + emissive` (albedo already in BRDF output)
 - [ ] `[R]` Codex reviews Claude's Phase 0 diffs
 
 Phase 1 - NRD dependency integration
@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `9b861b3` |
+| Hash | `6187d9a` |
 | Author | Claude Code |
 | Date | 2026-04-18 |
-| Scope | `P2` ShaderMake patch + full NRD REBLUR_DIFFUSE_SPECULAR backend wiring |
-| Summary | `cmake/patch_nrd.cmake` (removes `--useAPI`, fixes `SHADERMAKE_FXC_PATH`); `nrd_denoiser.cpp` full backend: CreateInstance, DXBC pipelines, permanent/transient pool, samplers, cbuffer, dispatch loop; `NrdCameraData` + `m_prevView`; build + 238 NRD shaders succeeded |
+| Scope | `P3` Fix double-albedo collapse: Composite formula + demodulation revert |
+| Summary | Diagnosed that `result.diffuse` already contains BRDF albedo (`kD*albedo/PI` from `SampleDirectLight`); removed incorrect `diffuse/primaryAlbedo` demodulation from `PathTracer.hlsl`; changed `Composite.hlsl` formula from `diffuse*albedo+specular+emissive` to `diffuse+specular+emissive` |
 
 ---
 
