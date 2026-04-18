@@ -68,14 +68,14 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Run the app and compare F1=OFF vs F1=ON brightness on building walls.
-    Expected: both are now brighter than before (no more double-albedo collapse).
-    If still near-black: the scene lights are too weak — increase emission values in MakeCityScene().
-    If F1=ON is bright but over-blurred: tune REBLUR spatial parameters.
+[1] Run the app, wait 4-8s static, and compare F1=OFF vs F1=ON.
+    Expected: building lower floors now visibly lit (warm amber from street lamps).
+    If still too dark: raise emission further or add sky ambient.
+    If F1=ON is bright but over-blurred: loosen REBLUR spatial parameters.
 ```
 
 Owner: Claude Code
-Claude Code completed: Root cause diagnosed (double albedo multiplication); Composite changed to `diffuse + specular + emissive`; demodulation patch reverted; build succeeded.
+Claude Code completed: Increased street lamp emission 5× (3.5→18.0) and window emissives 3×; build succeeded.
 
 ---
 
@@ -153,6 +153,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-18 | Claude Code | P3-2 | Increased street lamp emission 5× (3.5→18.0), window emissives 3×; lower floors should now show visible amber illumination after double-albedo fix
 2026-04-18 | Claude Code | P3-2 | Diagnosed double-albedo root cause: SampleDirectLight already bakes albedo into BRDF output; Composite `diffuse*albedo` was double-multiplying; changed to `diffuse+specular+emissive`; reverted primaryAlbedo demodulation; build succeeded (commit 6187d9a)
 2026-04-18 | Claude Code | P3-2 | Built primary-albedo diffuse demodulation patch (PathTracer.hlsl `diffuse /= primaryAlbedo` before NRD packing); user reported still dark; patch reverted in next step
 2026-04-18 | Codex       | P3-2 | Prepared a longer static timing probe (4s / 8s / 12s); the pre-demod frames still looked similarly dark at 4s and 8s, so the issue is likely deeper than short warm-up alone

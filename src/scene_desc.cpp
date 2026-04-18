@@ -40,17 +40,17 @@ SceneDesc MakeCityScene() {
     GpuMaterial matWinWarm{};
     matWinWarm.albedo    = glm::vec3(1.0f, 0.9f, 0.6f);
     matWinWarm.roughness = 1.0f;
-    matWinWarm.emissive  = glm::vec3(2.0f, 1.5f, 0.6f);
+    matWinWarm.emissive  = glm::vec3(6.0f, 4.5f, 1.8f);
 
     GpuMaterial matWinCool1{};
     matWinCool1.albedo    = glm::vec3(0.7f, 0.85f, 1.0f);
     matWinCool1.roughness = 1.0f;
-    matWinCool1.emissive  = glm::vec3(0.8f, 1.0f, 1.8f);
+    matWinCool1.emissive  = glm::vec3(2.5f, 3.0f, 5.5f);
 
     GpuMaterial matWinCool2{};
     matWinCool2.albedo    = glm::vec3(0.8f, 0.9f, 1.0f);
     matWinCool2.roughness = 1.0f;
-    matWinCool2.emissive  = glm::vec3(1.2f, 1.5f, 2.0f);
+    matWinCool2.emissive  = glm::vec3(3.5f, 4.5f, 6.0f);
 
     GpuMaterial matWinDark{};
     matWinDark.albedo    = glm::vec3(0.04f, 0.04f, 0.05f);
@@ -65,12 +65,12 @@ SceneDesc MakeCityScene() {
     GpuMaterial matHead{};
     matHead.albedo    = glm::vec3(1.0f, 0.95f, 0.70f);
     matHead.roughness = 1.0f;
-    matHead.emissive  = glm::vec3(3.5f, 2.7f, 1.3f);
+    matHead.emissive  = glm::vec3(18.0f, 14.0f, 6.5f);
 
     GpuMaterial matGlass{};
     matGlass.albedo    = glm::vec3(0.95f, 0.90f, 0.75f);
     matGlass.roughness = 0.20f;
-    matGlass.emissive  = glm::vec3(2.5f, 2.0f, 1.0f);
+    matGlass.emissive  = glm::vec3(12.0f, 9.5f, 4.5f);
 
     // 나무 재질
     GpuMaterial matTrunk{};
@@ -200,7 +200,7 @@ SceneDesc MakeCityScene() {
 
             // 변경:
             desc.lights.push_back(
-                LightDesc::MakeSphere({arm, 3.3f, z}, 0.5f, {3.5f, 2.7f, 1.3f})
+                LightDesc::MakeSphere({arm, 3.3f, z}, 0.5f, {18.0f, 14.0f, 6.5f})
             );
         }
     }
