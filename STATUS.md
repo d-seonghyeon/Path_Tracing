@@ -68,35 +68,19 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Claude: audit the remaining NRD input semantic mismatch, starting
-    with `IN_NORMAL_ROUGHNESS` / material demodulation, because the
-    latest raw-vs-denoised capture still shows an emissive-only result
-    after all of the following were already patched:
+[1] Runtime test: build is clean. Run Debug\PT_Object_Loading.exe,
+    press F1 to enable denoising, allow ~2s for accumulation, press F2
+    to capture. Verify build/capture_1_denoised.png is NOT emissive-only
+    black — expect a denoised scene with visible geometry.
 
-    A. `CommonSettings` matrices: NRD v4 expects column-major input, so
-       raw GLM `memcpy` is correct (no transpose needed there).
-    B. `motionVectorScale = 1 / screenSize`: correct for 2D screen-space
-       motion vectors with `isMotionVectorInWorldSpace = false`.
-    C. REBLUR expects pre-packed YCoCg radiance, and
-       `shader/NrdFrontend.hlsli` matches that contract.
-    D. REBLUR temporal stabilization writes `IN_MV` as a UAV, and the
-       DX11 wrapper now binds `m_motionVectorUAV` for that path.
-    E. The NRD-facing projection matrix is now explicit D3D-style
-       zero-to-one (`glm::perspectiveRH_ZO`).
-    F. A new demodulate/remodulate path was added:
-       `PathTracer.hlsl` divides diffuse/specular by NRD-style material
-       factors before packing, and `Composite.hlsl` multiplies them back
-       using `g_normalRoughness` + `g_baseColorMetalness`.
-
-    Despite A-F, the latest captures
-    (`build/capture_0_raw.png`, `build/capture_1_denoised.png`) still
-    show raw = normal noisy scene, denoised = almost entirely black
-    except emissives. Most likely next suspect: the exact semantics /
-    encoding of `IN_NORMAL_ROUGHNESS` (or the new material-factor path)
-    still do not match the embedded NRD DXBC configuration.
+    If it still looks black, the next audit target is IN_VIEWZ:
+    verify that PathTracer.hlsl writes correct positive view-space Z
+    to g_viewZ (dot product of worldPos with cameraFront, sign positive
+    for forward). Check context.cpp that g_viewZ is bound as t3 for
+    NRD and as the correct NRD resource type (IN_VIEWZ).
 ```
 
-Owner: Claude (semantic-mismatch root cause analysis)
+Owner: user (runtime capture) → Claude (follow-up if still black)
 
 ---
 
@@ -104,7 +88,7 @@ Owner: Claude (semantic-mismatch root cause analysis)
 
 ### Newly introduced
 
-- `shader/Composite.hlsl` - HDR composite pass that now re-applies NRD-style material factors before `diffuse + specular + emissive`
+- `shader/Composite.hlsl` - HDR composite pass: decodes YCoCg diffuse/specular, adds emissive; `diffuse + specular + emissive` (NO material factor remodulation)
 - `shader/NrdFrontend.hlsli` - local NRD-compatible front-end helpers for radiance / hit-distance / normal packing
 - `GlobalUniforms.prevViewProj` / `currViewProj` - motion vector matrices
 - `Context` screen resources - 7 G-buffer textures + `m_compositeTexture` + `m_denoisedDiffuse/Specular`
@@ -183,6 +167,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-19 | Claude Code | P3-3 | Identified demodulate/remodulate path (added by Codex) as root cause of emissive-only black denoised output; removed demodulation block from PathTracer.hlsl (previous session) and removed remodulation + GenerateCameraViewDir from Composite.hlsl; Composite now simply `diffuse + specular + emissive`; Debug build clean, awaiting runtime capture to confirm fix
 2026-04-18 | Codex       | P3-3 | Added `glm::perspectiveRH_ZO`, bound `IN_MV` as a UAV, and introduced a new NRD-style demodulate/remodulate path (`PathTracer.hlsl` + `Composite.hlsl` + `NrdFrontend.hlsli`); Debug build passed, automated F1/F2 capture succeeded, but `build/capture_1_denoised.png` is still almost entirely black except emissives, so the handoff target is now the remaining semantic mismatch (most likely `IN_NORMAL_ROUGHNESS` and/or material-factor handling)
 2026-04-18 | Codex       | P3-3 | Audited A-D against local NRD v4.14.3 docs/source: column-major CommonSettings upload is correct, REBLUR does expect YCoCg-packed radiance, and `motionVectorScale = 1/screenSize` is correct for 2D screen-space MVs; found and patched a separate real DX11 bug where REBLUR temporal stabilization writes `IN_MV` as a UAV but our wrapper had been binding null there; Debug build passed, runtime smoke test blocked by a local PowerShell `Path`/`PATH` collision
 2026-04-18 | Claude Code | P3-3 | NRD black output bug: confirmed emissive-only pattern persists even after bounce-0 emitter removal; Codex delegated for root-cause analysis (matrix convention / YCoCg / normHitDist / MV scale)

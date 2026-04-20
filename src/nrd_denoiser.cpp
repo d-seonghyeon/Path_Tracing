@@ -289,6 +289,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         cs.resourceSizePrev[0] = cs.rectSizePrev[0] = (uint16_t)m_width;
         cs.resourceSizePrev[1] = cs.rectSizePrev[1] = (uint16_t)m_height;
 
+        cs.denoisingRange           = 500000.0f;
         cs.frameIndex               = frameIndex;
         cs.isMotionVectorInWorldSpace = false;
         cs.accumulationMode = m_resetRequested

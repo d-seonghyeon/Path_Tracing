@@ -51,7 +51,7 @@ float3 NrdYCoCgToLinear(float3 color)
     result.y = color.x + color.z;
     result.x = t + color.y;
     result.z = t - color.y;
-    return result;
+    return max(result, 0.0f);
 }
 
 float4 NrdPackNormalAndRoughness(float3 normal, float roughness)
