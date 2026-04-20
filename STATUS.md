@@ -8,7 +8,7 @@
 ## 0. Current Phase
 
 - Active phase: `Phase 3 - Quality tuning`
-- Detailed sub-phase: `P3-3 - NRD black-output audit + follow-up patches landed; semantic mismatch still unresolved`
+- Detailed sub-phase: `P3-4 - Systematic black-output debug (localization-first; stop blind patching)`
 - Blocked: `No`
 - Branch: `feature/nrd-phase0`
 
@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `6187d9a` |
-| Author | Claude Code |
-| Date | 2026-04-18 |
-| Scope | `P3` Fix double-albedo collapse: Composite formula + demodulation revert |
-| Summary | Diagnosed that `result.diffuse` already contains BRDF albedo (`kD*albedo/PI` from `SampleDirectLight`); removed incorrect `diffuse/primaryAlbedo` demodulation from `PathTracer.hlsl`; changed `Composite.hlsl` formula from `diffuse*albedo+specular+emissive` to `diffuse+specular+emissive` |
+| Hash | `f696630` |
+| Author | choi mun chan |
+| Date | 2026-04-20 |
+| Scope | `P3` Remove demodulate/remodulate path + debug Composite + `denoisingRange` |
+| Summary | Removed NRD material demodulation block from `PathTracer.hlsl` and the matching remodulation from `Composite.hlsl`; `Composite.hlsl` now temporarily visualizes raw `diffuse/specular` Y-channel × 20 to confirm whether the diffuse buffer carries any signal pre-composite; `NrdFrontend.hlsli` clamps `NrdYCoCgToLinear` with `max(.., 0)`; `nrd_denoiser.cpp` sets `cs.denoisingRange = 500000.0f` for large worlds. Capture path still produces emissive-only black on `F1=ON`. |
 
 ---
 
@@ -68,19 +68,26 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[1] Runtime test: build is clean. Run Debug\PT_Object_Loading.exe,
-    press F1 to enable denoising, allow ~2s for accumulation, press F2
-    to capture. Verify build/capture_1_denoised.png is NOT emissive-only
-    black — expect a denoised scene with visible geometry.
+[A1 of P3-4] Run Debug\PT_Object_Loading.exe with F1=ON and inspect
+    the temporary debug-Composite output (Y-channel × 20 of raw
+    g_diffuseRadiance / g_specularRadiance written by f696630).
 
-    If it still looks black, the next audit target is IN_VIEWZ:
-    verify that PathTracer.hlsl writes correct positive view-space Z
-    to g_viewZ (dot product of worldPos with cameraFront, sign positive
-    for forward). Check context.cpp that g_viewZ is bound as t3 for
-    NRD and as the correct NRD resource type (IN_VIEWZ).
+    Decision tree:
+      * If the debug overlay shows a visible (noisy) scene → raw
+        diff/spec carries signal, so the bug is downstream of
+        PathTracer (NRD or Composite). Proceed to A2 (per-stage
+        capture) to split NRD vs Composite.
+      * If the debug overlay is also black → raw diff/spec is
+        already empty. The bug is upstream in PathTracer and
+        Phase A2/B/D become irrelevant; jump to Phase C (input
+        audit) to find which G-buffer write is failing.
+
+    Save the resulting PNG as build/debug_raw_overlay.png and
+    record the verdict (upstream / NRD-internal / downstream)
+    in §5 Session Log before doing any further patches.
 ```
 
-Owner: user (runtime capture) → Claude (follow-up if still black)
+Owner: user (runtime capture) → Claude (classify verdict, pick next phase)
 
 ---
 
@@ -156,9 +163,10 @@ No critical conflicts found. Details:
 
 ## 4. Open Questions
 
-1. Does the embedded NRD DXBC expect a stricter `IN_NORMAL_ROUGHNESS` resource format / semantic contract than our current `R16G16B16A16_FLOAT` + local oct-pack path?
-2. Is the new demodulate/remodulate path actually aligned with NRD's intended "radiance without material information" contract for this tracer, or is it over-correcting an already-demodulated signal?
+1. Does the embedded NRD DXBC expect a stricter `IN_NORMAL_ROUGHNESS` resource format / semantic contract than our current `R16G16B16A16_FLOAT` + local oct-pack path? (Answer should fall out of Phase C1 of §7.)
+2. Is the bug actually inside REBLUR, or in the bracket around it (PathTracer outputs / Composite decode)? §7 Phase A is designed to answer exactly this before any further fixes.
 3. When the root cause is fixed, should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format later?
+4. Does the NRD validation layer (`CommonSettings.enableValidation`) actually emit a useful overlay in our DX11-direct path (no NRI), or do we need to consume it manually? (Answer in Phase B1.)
 
 ---
 
@@ -167,6 +175,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-04-20 | Claude       | P3-4 | After ~10 patches (matrix, YCoCg, hit-dist, IN_MV UAV, perspectiveRH_ZO, demod/remod, double-albedo, denoisingRange) all failed to resolve the emissive-only black, switched strategy from blind patching to localization-first debugging; added new doc `NRD_BLACK_OUTPUT_DEBUG.md` with phases A (per-stage capture) → B (NRD validation + REFERENCE) → C (input audit) → D (downstream audit) → E (reference comparison / fallback) and exit criteria; updated `STATUS.md` §0 sub-phase (P3-3 → P3-4), §1 last-commit hash (6187d9a → f696630), §2 next action (Phase A1: inspect debug Composite overlay), §4 open questions, §7 (now a pointer to the new doc); no code changes yet — next action is a runtime capture to classify the failing stage
 2026-04-19 | Claude Code | P3-3 | Identified demodulate/remodulate path (added by Codex) as root cause of emissive-only black denoised output; removed demodulation block from PathTracer.hlsl (previous session) and removed remodulation + GenerateCameraViewDir from Composite.hlsl; Composite now simply `diffuse + specular + emissive`; Debug build clean, awaiting runtime capture to confirm fix
 2026-04-18 | Codex       | P3-3 | Added `glm::perspectiveRH_ZO`, bound `IN_MV` as a UAV, and introduced a new NRD-style demodulate/remodulate path (`PathTracer.hlsl` + `Composite.hlsl` + `NrdFrontend.hlsli`); Debug build passed, automated F1/F2 capture succeeded, but `build/capture_1_denoised.png` is still almost entirely black except emissives, so the handoff target is now the remaining semantic mismatch (most likely `IN_NORMAL_ROUGHNESS` and/or material-factor handling)
 2026-04-18 | Codex       | P3-3 | Audited A-D against local NRD v4.14.3 docs/source: column-major CommonSettings upload is correct, REBLUR does expect YCoCg-packed radiance, and `motionVectorScale = 1/screenSize` is correct for 2D screen-space MVs; found and patched a separate real DX11 bug where REBLUR temporal stabilization writes `IN_MV` as a UAV but our wrapper had been binding null there; Debug build passed, runtime smoke test blocked by a local PowerShell `Path`/`PATH` collision
@@ -207,3 +216,27 @@ Newest entry goes on top.
 2. Before ending a session, update the session log and replace the next concrete action.
 3. Do not let two tools rewrite the same section simultaneously.
 4. Only check checklist boxes after merge, not for local-only progress.
+
+---
+
+## 7. Black-Output Debug Plan (P3-4)
+
+The full phased plan lives in [`NRD_BLACK_OUTPUT_DEBUG.md`](./NRD_BLACK_OUTPUT_DEBUG.md).
+
+Quick map (read the dedicated doc for entry conditions and step
+details):
+
+- **Phase A** — Localize the failing stage with per-stage captures.
+  Mandatory entry point. Verdict = upstream / NRD-internal / downstream.
+- **Phase B** — NRD-internal isolation: `enableValidation`, settings
+  dump, `CLEAR_AND_RESTART`, `REFERENCE` denoiser passthrough.
+- **Phase C** — Upstream audit: byte-compare local packing vs
+  `NRD.hlsli`; visualize `viewZ` / `motionVector` / `baseColor` /
+  `emissive`.
+- **Phase D** — Downstream audit: bypass NRD, verify SRV bindings,
+  YCoCg round-trip, ToneMap divisor.
+- **Phase E** — Reference comparison vs NVIDIA's official DX11
+  sample; fallback to `REFERENCE` denoiser if needed.
+
+`NRD_BLACK_OUTPUT_DEBUG.md` is temporary and must be deleted in the
+same commit that advances `§0` sub-phase past `P3-4`.
