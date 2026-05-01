@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `d6aaf7c` |
+| Hash | `4ca5441` |
 | Author | choi mun chan |
 | Date | 2026-05-01 |
-| Scope | `P3` NRD REBLUR internal SRV binding fix |
-| Summary | Fixed the black-output root cause by resolving `OUT_DIFF_RADIANCE_HITDIST` / `OUT_SPEC_RADIANCE_HITDIST` as SRVs for REBLUR internal read-after-write passes, restored normal Composite output, removed temporary debug controls, and kept only F1 denoise toggle plus F2 screenshot capture. |
+| Scope | `P3` REBLUR quality fix — sampler UB + NEE channel + hitT + prepass blur |
+| Summary | Four quality fixes applied: (C1) sampler array extended to 4 entries so LINEAR_CLAMP enum=2 maps correctly instead of out-of-bounds UB; (C2) bounce=0 NEE moved entirely to diffuse channel to prevent REBLUR specular lobe mismatch; (C4) diffuse hitT switched from accumulated path length to first-secondary-hit distance only; (C5) specularPrepassBlurRadius reduced 28→12 now that specular channel is clean. Debug build clean. |
 
 ---
 
@@ -67,29 +67,17 @@ Phase 4 - Validation / A-B
 
 Do exactly one next action, not a vague "continue".
 
-Current next action supersedes the older B12 text below:
-
 ```
-[B13 of P3-5] Decide whether to keep and commit the B11/B12 quality sweep.
+[P3-5 quality-fix round] C1-C5 committed (commits 8450ef1..4ca5441).
 
-Done in this workspace:
-- B11 detail-retention parameter sweep applied in `src/nrd_denoiser.cpp`.
-- Reduced prepass radii (`16/28`), max blur radius (`18`), and history
-  length (`24/4`) while keeping the working REBLUR path intact.
-- Debug `ALL_BUILD` passed.
-- Runtime F1 OFF / F1 ON capture passed with no stderr.
-- `capture_1_denoised.png` remains visible and appears slightly less smeared
-  than the B10 baseline, especially around water reflections and distant
-  geometry, but side-wall dark smearing still needs a motion check.
-- B12 automated motion probe passed: after F1 ON, a short D-key camera move
-  produced `capture_0_denoised.png` immediately after movement and
-  `capture_1_denoised.png` after settling, with no stderr and no obvious
-  long-lived ghost trail in the captured frames.
+Applied fixes:
+- C1: sampler array out-of-bounds UB fixed (m_samplers[4], correct enum mapping)
+- C2: bounce=0 NEE moved entirely to diffuse channel
+- C4: diffuse hitT changed from accumulated path length to first secondary hit
+- C5: specularPrepassBlurRadius 28→12
 
-Next concrete action:
-Have the user visually review the B10/B11/B12 captures. If acceptable, commit
-`src/nrd_denoiser.cpp`, `STATUS.md`, and the deletion of
-`NRD_BLACK_OUTPUT_DEBUG.md`; if not, roll back only the B11 parameter sweep.
+Debug ALL_BUILD passed. Awaiting runtime visual comparison (F2 capture F1 OFF/ON)
+to judge whether specular smearing and detail loss have improved.
 ```
 
 ---
@@ -180,6 +168,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-01 | Claude Code | P3-5 | Quality-fix round C1–C5 committed (8450ef1..4ca5441). (C1) sampler array extended to 4 entries — NEAREST_CLAMP/NEAREST_MIRROR/LINEAR_CLAMP/LINEAR_MIRROR indexed by nrd::Sampler enum value, fixing out-of-bounds UB that corrupted REBLUR blur-pass filtering. (C2) bounce=0 NEE moved entirely to diffuse channel, removing REBLUR specular temporal-lobe mismatch that caused horizontal smearing. (C4) diffuse hitT changed from accumulated multi-bounce path length to first-secondary-hit distance only, symmetric with specular. (C5) specularPrepassBlurRadius 28→12 now that specular channel is clean. Debug ALL_BUILD passed. Runtime visual comparison needed: F2 capture F1 OFF/ON to judge remaining smearing and detail.
 2026-05-01 | Codex       | Docs | Removed obsolete root markdown notes that were no longer needed for future work: `REFACTORING.md`, `SCENE_REFACTOR.md`, and `SCENE_GUIDE.md`. Kept `STATUS.md`, `AGENTS.md`, `CLAUDE.md`, `NRD_INTEGRATION_PLAN.md`, and `CHANGELOG_2026-04-07.md` because they are still used for cross-session state, agent rules, NRD roadmap, or build/runtime history.
 2026-05-01 | Codex       | P3-5 | B12 automated camera-motion probe completed for the B11 lower-blur sweep. Started with F1 ON, held D briefly, captured `capture_0_denoised.png` immediately after movement and `capture_1_denoised.png` after roughly 4 seconds of settling. The app stayed alive, stdout showed normal NRD settings logs, stderr was empty, and the viewed captures did not show an obvious long-lived ghost trail. Verdict: B11 sweep is a keep candidate, pending user visual review before commit.
 2026-05-01 | Codex       | P3-5 | B11 detail-retention sweep applied. Reduced REBLUR prepass radii from `24/42` to `16/28`, max history from `28/5` to `24/4`, added `minBlurRadius=0.75` and `maxBlurRadius=18`, and moved rejection settings closer to defaults (`minHitDistanceWeight=0.12`, `lobeAngleFraction=0.16`, `roughnessFraction=0.16`, `planeDistanceSensitivity=0.025`). Debug `ALL_BUILD` passed. Automated F1 OFF / F1 ON capture passed after retrying with `WScript.Shell.SendKeys`; `capture_1_denoised.png` remains visible and looks slightly less smeared around water reflections/distant geometry than the saved B10 baseline, with no stderr. Next: manual camera-motion probe to catch ghosting/noise regressions before keeping or rolling back this sweep.
