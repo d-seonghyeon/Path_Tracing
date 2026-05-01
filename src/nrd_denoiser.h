@@ -7,39 +7,31 @@
 #include <NRD.h>
 #endif
 
-// -------------------------------------------------------
-// NrdGBufferInputs — PathTracer G-buffer SRV 묶음
-// -------------------------------------------------------
+// PathTracer G-buffer SRV bundle.
 struct NrdGBufferInputs {
     ID3D11ShaderResourceView* diffuseRadiance;   // R16G16B16A16_FLOAT (.rgb=diffuse, .a=hitT)
     ID3D11ShaderResourceView* specularRadiance;  // R16G16B16A16_FLOAT (.rgb=specular, .a=hitT)
     ID3D11ShaderResourceView* viewZ;             // R32_FLOAT
     ID3D11ShaderResourceView* normalRoughness;   // R16G16B16A16_FLOAT (.rg=octa N, .b=roughness)
-    ID3D11ShaderResourceView* motionVector;      // R16G16_FLOAT (픽셀 단위 prev-curr)
+    ID3D11ShaderResourceView* motionVector;      // R16G16_FLOAT, screen-space prev - curr in pixels
 };
 
-// -------------------------------------------------------
-// NrdDenoisedOutputs — NRD 출력 UAV 묶음 (Composite 패스 입력)
-// -------------------------------------------------------
+// NRD output textures. Later NRD passes may read the same textures as SRVs.
 struct NrdDenoisedOutputs {
-    ID3D11UnorderedAccessView* diffuse;    // R16G16B16A16_FLOAT (denoised diffuse radiance)
-    ID3D11UnorderedAccessView* specular;   // R16G16B16A16_FLOAT (denoised specular radiance)
+    ID3D11ShaderResourceView* diffuseSrv;
+    ID3D11ShaderResourceView* specularSrv;
+    ID3D11UnorderedAccessView* diffuse;      // R16G16B16A16_FLOAT
+    ID3D11UnorderedAccessView* specular;     // R16G16B16A16_FLOAT
     ID3D11UnorderedAccessView* motionVector; // REBLUR temporal stabilization can patch IN_MV in-place
 };
 
-// -------------------------------------------------------
-// NrdCameraData — Denoise 호출당 행렬 패키지
-// GLM column-major; NRD CommonSettings도 column-major (vector-as-column).
-// -------------------------------------------------------
+// GLM column-major; NRD CommonSettings expects column-major matrices.
 struct NrdCameraData {
-    glm::mat4 viewMatrix;      // current frame: world → camera
-    glm::mat4 projMatrix;      // current frame: camera → clip (non-jittered)
-    glm::mat4 prevViewMatrix;  // previous frame: world → camera
+    glm::mat4 viewMatrix;      // current frame: world -> camera
+    glm::mat4 projMatrix;      // current frame: camera -> clip, non-jittered
+    glm::mat4 prevViewMatrix;  // previous frame: world -> camera
 };
 
-// -------------------------------------------------------
-// NrdPoolEntry — 풀 텍스처 하나 (SRV + UAV 공용)
-// -------------------------------------------------------
 #if PT_ENABLE_NRD && __has_include(<NRD.h>)
 struct NrdPoolEntry {
     ComPtr<ID3D11Texture2D>           texture;
@@ -48,11 +40,6 @@ struct NrdPoolEntry {
 };
 #endif
 
-// -------------------------------------------------------
-// NrdDenoiser
-// Phase 2: DX11 + embedded-DXBC NRD (REBLUR_DIFFUSE_SPECULAR) 래퍼.
-// NRI 는 사용하지 않는다 (AGENTS.md §7.1).
-// -------------------------------------------------------
 CLASS_PTR(NrdDenoiser)
 class NrdDenoiser {
 public:
@@ -64,8 +51,6 @@ public:
     bool HasUsableBackend() const   { return m_isInitialized && m_isBackendAvailable; }
     const char* GetBackendStatusLabel() const;
 
-    // Denoise: G-buffer + camera 행렬을 받아 denoised 결과를 outputs에 기록.
-    // NRD SDK 미연결 시 G-buffer를 그대로 outputs으로 복사(stub).
     bool Denoise(ID3D11DeviceContext* ctx,
                  const NrdGBufferInputs& inputs,
                  const NrdDenoisedOutputs& outputs,
@@ -94,9 +79,9 @@ private:
     ComPtr<ID3D11SamplerState>               m_samplers[2]; // [0]=nearest clamp, [1]=linear clamp
     ComPtr<ID3D11Buffer>                     m_constantBuffer;
 
-    // 리소스 리졸브 헬퍼
     ID3D11ShaderResourceView*  ResolveSRV(const nrd::ResourceDesc& res,
-                                          const NrdGBufferInputs& in) const;
+                                          const NrdGBufferInputs& in,
+                                          const NrdDenoisedOutputs& out) const;
     ID3D11UnorderedAccessView* ResolveUAV(const nrd::ResourceDesc& res,
                                           const NrdDenoisedOutputs& out) const;
 #endif

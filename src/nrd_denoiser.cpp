@@ -1,16 +1,17 @@
 #include "nrd_denoiser.h"
 
 #include <spdlog/spdlog.h>
+#include <cstring>
 
 // ===================================================================
-// NRD 전용 헬퍼 (PT_ENABLE_NRD + NRD.h 있을 때만 컴파일)
+// NRD ?袁⑹뒠 ????(PT_ENABLE_NRD + NRD.h ??됱뱽 ???춸 ?뚮똾???
 // ===================================================================
 #if PT_ENABLE_NRD && __has_include(<NRD.h>)
 
 static const nrd::Identifier REBLUR_ID = 0;
 
 // -------------------------------------------------------
-// NRD Format → DXGI Format
+// NRD Format ??DXGI Format
 // -------------------------------------------------------
 static DXGI_FORMAT NrdFormatToDxgi(nrd::Format fmt)
 {
@@ -62,8 +63,13 @@ static DXGI_FORMAT NrdFormatToDxgi(nrd::Format fmt)
     }
 }
 
+static uint32_t NrdDivideUp(uint32_t value, uint32_t divisor)
+{
+    return (value + divisor - 1) / divisor;
+}
+
 // -------------------------------------------------------
-// 풀 텍스처 생성 (SRV + UAV 동시)
+// ?? ??용뮞筌???밴쉐 (SRV + UAV ??덈뻻)
 // -------------------------------------------------------
 static bool CreatePoolTexture(ID3D11Device* device, DXGI_FORMAT fmt,
                                uint32_t w, uint32_t h, NrdPoolEntry& entry)
@@ -93,7 +99,7 @@ static bool CreatePoolTexture(ID3D11Device* device, DXGI_FORMAT fmt,
 #endif // PT_ENABLE_NRD
 
 // ===================================================================
-// NrdDenoiser 구현
+// NrdDenoiser ?닌뗭겱
 // ===================================================================
 
 NrdDenoiserUPtr NrdDenoiser::Create(ID3D11Device* device, uint32_t width, uint32_t height)
@@ -135,7 +141,7 @@ const char* NrdDenoiser::GetBackendStatusLabel() const
 }
 
 // -------------------------------------------------------
-// Init — NRD 인스턴스 + 파이프라인 + 풀 + 샘플러 + cbuffer 생성
+// Init ??NRD ?紐꾨뮞??곷뮞 + ???뵠?袁⑥뵬??+ ?? + ??묐탣??+ cbuffer ??밴쉐
 // -------------------------------------------------------
 bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
 {
@@ -150,7 +156,7 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
 
 #if PT_ENABLE_NRD && __has_include(<NRD.h>)
 
-    // 1. NRD 인스턴스 생성 (REBLUR_DIFFUSE_SPECULAR)
+    // 1. NRD ?紐꾨뮞??곷뮞 ??밴쉐 (REBLUR_DIFFUSE_SPECULAR)
     nrd::DenoiserDesc denoiserDesc = {};
     denoiserDesc.identifier = REBLUR_ID;
     denoiserDesc.denoiser   = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
@@ -163,12 +169,12 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
     if (nrdResult != nrd::Result::SUCCESS || !m_nrdInstance) {
         SPDLOG_ERROR("NrdDenoiser::Init: nrd::CreateInstance failed ({}).", (uint32_t)nrdResult);
         m_isInitialized = true;
-        return true; // 비치명적: stub 유지
+        return true; // ??쑴?귨쭗?놁읅: stub ?醫?
     }
 
     const nrd::InstanceDesc& instDesc = nrd::GetInstanceDesc(*m_nrdInstance);
 
-    // 2. 파이프라인당 ComputeShader 생성 (DXBC embed)
+    // 2. ???뵠?袁⑥뵬?紐껊뼣 ComputeShader ??밴쉐 (DXBC embed)
     m_pipelines.resize(instDesc.pipelinesNum);
     for (uint32_t i = 0; i < instDesc.pipelinesNum; i++) {
         const nrd::ComputeShaderDesc& dxbc = instDesc.pipelines[i].computeShaderDXBC;
@@ -185,33 +191,33 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
         }
     }
 
-    // 3. Permanent pool (리사이즈 시에만 재생성)
+    // 3. Permanent pool (?귐딄텢??곸グ ??뽯퓠筌???源??
     m_permanentPool.resize(instDesc.permanentPoolSize);
     for (uint32_t i = 0; i < instDesc.permanentPoolSize; i++) {
         const nrd::TextureDesc& td = instDesc.permanentPool[i];
         DXGI_FORMAT fmt = NrdFormatToDxgi(td.format);
-        uint32_t w = std::max(1u, width  >> td.downsampleFactor);
-        uint32_t h = std::max(1u, height >> td.downsampleFactor);
+        uint32_t w = std::max(1u, NrdDivideUp(width,  (uint32_t)td.downsampleFactor));
+        uint32_t h = std::max(1u, NrdDivideUp(height, (uint32_t)td.downsampleFactor));
         if (!CreatePoolTexture(device, fmt, w, h, m_permanentPool[i])) {
             SPDLOG_ERROR("NrdDenoiser::Init: permanentPool[{}] failed.", i);
             DestroyBackend(); m_isInitialized = true; return true;
         }
     }
 
-    // 4. Transient pool (매 프레임 재사용 가능)
+    // 4. Transient pool (筌??袁⑥쟿????沅??揶쎛??
     m_transientPool.resize(instDesc.transientPoolSize);
     for (uint32_t i = 0; i < instDesc.transientPoolSize; i++) {
         const nrd::TextureDesc& td = instDesc.transientPool[i];
         DXGI_FORMAT fmt = NrdFormatToDxgi(td.format);
-        uint32_t w = std::max(1u, width  >> td.downsampleFactor);
-        uint32_t h = std::max(1u, height >> td.downsampleFactor);
+        uint32_t w = std::max(1u, NrdDivideUp(width,  (uint32_t)td.downsampleFactor));
+        uint32_t h = std::max(1u, NrdDivideUp(height, (uint32_t)td.downsampleFactor));
         if (!CreatePoolTexture(device, fmt, w, h, m_transientPool[i])) {
             SPDLOG_ERROR("NrdDenoiser::Init: transientPool[{}] failed.", i);
             DestroyBackend(); m_isInitialized = true; return true;
         }
     }
 
-    // 5. 샘플러 (NEAREST_CLAMP, LINEAR_CLAMP)
+    // 5. ??묐탣??(NEAREST_CLAMP, LINEAR_CLAMP)
     {
         D3D11_SAMPLER_DESC sd = {};
         sd.AddressU      = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -227,7 +233,7 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
         if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: linear sampler 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
     }
 
-    // 6. 상수 버퍼 (최대 dispatch 크기, 16바이트 정렬)
+    // 6. ?怨몃땾 甕곌쑵??(筌ㅼ뮆? dispatch ??由? 16獄쏅뗄????類ｌ졊)
     {
         uint32_t cbSize = ((instDesc.constantBufferMaxDataSize + 15) & ~15u);
         if (cbSize == 0) cbSize = 16;
@@ -243,7 +249,7 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
     }
 
     m_isBackendAvailable = true;
-    SPDLOG_INFO("NrdDenoiser: REBLUR_DIFFUSE_SPECULAR ready — {} pipelines, {} perm, {} trans.",
+    SPDLOG_INFO("NrdDenoiser: REBLUR_DIFFUSE_SPECULAR ready ??{} pipelines, {} perm, {} trans.",
                 instDesc.pipelinesNum, instDesc.permanentPoolSize, instDesc.transientPoolSize);
 
 #else
@@ -255,7 +261,7 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
 }
 
 // -------------------------------------------------------
-// Denoise — 매 프레임 NRD 디스패치 실행 (또는 stub CopyResource)
+// Denoise ??筌??袁⑥쟿??NRD ?遺용뮞??ν뒄 ??쎈뻬 (?癒?뮉 stub CopyResource)
 // -------------------------------------------------------
 bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
                            const NrdGBufferInputs& inputs,
@@ -264,7 +270,6 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
                            uint32_t frameIndex)
 {
     if (!ctx) return false;
-
 #if PT_ENABLE_NRD && __has_include(<NRD.h>)
     if (m_isBackendAvailable && m_nrdInstance) {
         const nrd::InstanceDesc& instDesc = nrd::GetInstanceDesc(*m_nrdInstance);
@@ -272,14 +277,13 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         // --- CommonSettings ---
         nrd::CommonSettings cs = {};
 
-        // GLM은 column-major; NRD도 column-major (vector-as-column) → 직접 memcpy
+        // GLM?? column-major; NRD??column-major (vector-as-column) ??筌욊낯??memcpy
         static_assert(sizeof(glm::mat4) == 64, "mat4 size");
         memcpy(cs.worldToViewMatrix,     glm::value_ptr(camera.viewMatrix),     64);
         memcpy(cs.worldToViewMatrixPrev, glm::value_ptr(camera.prevViewMatrix), 64);
         memcpy(cs.viewToClipMatrix,      glm::value_ptr(camera.projMatrix),     64);
         memcpy(cs.viewToClipMatrixPrev,  glm::value_ptr(camera.projMatrix),     64);
-
-        // MV는 픽셀 단위 (prevPixel − currPixel). scale = 1/screenSize → UV 단위로 변환
+        // Motion vectors are in pixel units (prev - curr); scale converts to UV units.
         cs.motionVectorScale[0] = 1.0f / (float)m_width;
         cs.motionVectorScale[1] = 1.0f / (float)m_height;
         cs.motionVectorScale[2] = 0.0f;
@@ -290,16 +294,39 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         cs.resourceSizePrev[1] = cs.rectSizePrev[1] = (uint16_t)m_height;
 
         cs.denoisingRange           = 500000.0f;
+        cs.splitScreen              = 0.0f;
         cs.frameIndex               = frameIndex;
         cs.isMotionVectorInWorldSpace = false;
         cs.accumulationMode = m_resetRequested
                               ? nrd::AccumulationMode::CLEAR_AND_RESTART
                               : nrd::AccumulationMode::CONTINUE;
 
-        nrd::SetCommonSettings(*m_nrdInstance, cs);
+        // Explicitly set fields that have non-zero defaults in NRDSettings.h.
+        // MSVC (pre-19.26) zero-inits aggregate members even when default member
+        // initializers are present, so `= {}` above may leave these as 0.
+        cs.viewZScale                        = 1.0f;   // UnpackViewZ = abs(z * viewZScale)
+        cs.disocclusionThreshold             = 0.01f;
+        cs.disocclusionThresholdAlternate    = 0.05f;
+
+        const nrd::Identifier activeId = REBLUR_ID;
+
+        // Phase-B diagnostic: log key values on first two frames to confirm init.
+        if (frameIndex <= 1) {
+            SPDLOG_INFO("NRD SetCommonSettings [mode={}, f={}]: viewZScale={:.4f} denoisingRange={:.1f} "
+                        "split={:.1f} mvScale=({:.6f},{:.6f}) disocclThresh={:.4f}",
+                        "REBLUR",
+                        frameIndex, cs.viewZScale, cs.denoisingRange,
+                        cs.splitScreen,
+                        cs.motionVectorScale[0], cs.motionVectorScale[1],
+                        cs.disocclusionThreshold);
+        }
+
+        nrd::Result csResult = nrd::SetCommonSettings(*m_nrdInstance, cs);
+        if (csResult != nrd::Result::SUCCESS)
+            SPDLOG_ERROR("NrdDenoiser::Denoise: SetCommonSettings failed ({})", (uint32_t)csResult);
         if (m_resetRequested) m_resetRequested = false;
 
-        // --- DenoiserSettings (REBLUR 기본값 사용) ---
+        // --- DenoiserSettings (REBLUR 疫꿸퀡??첎????? ---
         nrd::ReblurSettings reblurSettings = {};
         reblurSettings.hitDistanceParameters.A = 3.0f;
         reblurSettings.hitDistanceParameters.B = 0.1f;
@@ -319,19 +346,21 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         reblurSettings.lobeAngleFraction                     = 0.20f;
         reblurSettings.roughnessFraction                     = 0.20f;
         reblurSettings.planeDistanceSensitivity              = 0.03f;
-        nrd::SetDenoiserSettings(*m_nrdInstance, REBLUR_ID, &reblurSettings);
+        nrd::Result dsResult = nrd::SetDenoiserSettings(*m_nrdInstance, REBLUR_ID, &reblurSettings);
+        if (dsResult != nrd::Result::SUCCESS)
+            SPDLOG_ERROR("NrdDenoiser::Denoise: SetDenoiserSettings failed ({})", (uint32_t)dsResult);
 
         // --- GetComputeDispatches ---
         const nrd::DispatchDesc* dispatches     = nullptr;
         uint32_t                 numDispatches  = 0;
-        nrd::Result r = nrd::GetComputeDispatches(*m_nrdInstance, &REBLUR_ID, 1,
+        nrd::Result r = nrd::GetComputeDispatches(*m_nrdInstance, &activeId, 1,
                                                    dispatches, numDispatches);
         if (r != nrd::Result::SUCCESS || !dispatches) {
             SPDLOG_ERROR("NrdDenoiser::Denoise: GetComputeDispatches failed ({}).", (uint32_t)r);
             return false;
         }
 
-        // --- 샘플러 바인딩 (모든 dispatch 공용) ---
+        // --- ??묐탣??獄쏅뗄???(筌뤴뫀諭?dispatch ?⑤벊?? ---
         {
             std::vector<ID3D11SamplerState*> sampArr(instDesc.samplersNum, nullptr);
             for (uint32_t i = 0; i < instDesc.samplersNum; i++)
@@ -340,15 +369,15 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
                                instDesc.samplersNum, sampArr.data());
         }
 
-        // --- Dispatch 루프 ---
+        // --- Dispatch ?룐뫂遊?---
         for (uint32_t d = 0; d < numDispatches; d++) {
             const nrd::DispatchDesc& disp = dispatches[d];
             const nrd::PipelineDesc& pipe = instDesc.pipelines[disp.pipelineIndex];
 
-            // Compute Shader 설정
+            // Compute Shader ??쇱젟
             ctx->CSSetShader(m_pipelines[disp.pipelineIndex].Get(), nullptr, 0);
 
-            // 상수 버퍼 업데이트
+            // ?怨몃땾 甕곌쑵????낅쑓??꾨뱜
             if (!disp.constantBufferDataMatchesPreviousDispatch &&
                 disp.constantBufferData && disp.constantBufferDataSize > 0) {
                 D3D11_MAPPED_SUBRESOURCE mapped = {};
@@ -362,7 +391,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
                 ctx->CSSetConstantBuffers(instDesc.constantBufferRegisterIndex, 1, &cb);
             }
 
-            // 리소스 바인딩 (각 ResourceRange 순회)
+            // ?귐딅꺖??獄쏅뗄???(揶?ResourceRange ??쀬돳)
             uint32_t resourceOffset = 0;
             for (uint32_t ri = 0; ri < pipe.resourceRangesNum; ri++) {
                 const nrd::ResourceRangeDesc& range = pipe.resourceRanges[ri];
@@ -370,7 +399,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
                 if (range.descriptorType == nrd::DescriptorType::TEXTURE) {
                     std::vector<ID3D11ShaderResourceView*> srvs(range.descriptorsNum, nullptr);
                     for (uint32_t k = 0; k < range.descriptorsNum; k++)
-                        srvs[k] = ResolveSRV(disp.resources[resourceOffset + k], inputs);
+                        srvs[k] = ResolveSRV(disp.resources[resourceOffset + k], inputs, outputs);
                     ctx->CSSetShaderResources(range.baseRegisterIndex,
                                               range.descriptorsNum, srvs.data());
                 } else {
@@ -386,7 +415,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
             // Dispatch
             ctx->Dispatch(disp.gridWidth, disp.gridHeight, 1);
 
-            // null-clear (hazard 방지)
+            // null-clear (hazard 獄쎻뫗?)
             resourceOffset = 0;
             for (uint32_t ri = 0; ri < pipe.resourceRangesNum; ri++) {
                 const nrd::ResourceRangeDesc& range = pipe.resourceRanges[ri];
@@ -399,9 +428,10 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
                 }
                 resourceOffset += range.descriptorsNum;
             }
+
         }
 
-        // 공통 슬롯 null-clear
+        // ?⑤벏??????null-clear
         {
             ID3D11Buffer* nullCB = nullptr;
             ctx->CSSetConstantBuffers(instDesc.constantBufferRegisterIndex, 1, &nullCB);
@@ -417,8 +447,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
 #endif
 
     // -------------------------------------------------------
-    // Stub: input SRVs → output UAVs pass-through 복사
-    // -------------------------------------------------------
+    // Stub: input SRVs ??output UAVs pass-through 癰귣벊沅?    // -------------------------------------------------------
     (void)camera;
     (void)frameIndex;
 
@@ -445,8 +474,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
 }
 
 // -------------------------------------------------------
-// OnResize — 풀/파이프라인 재생성
-// -------------------------------------------------------
+// OnResize ????/???뵠?袁⑥뵬????源??// -------------------------------------------------------
 bool NrdDenoiser::OnResize(ID3D11Device* device, uint32_t width, uint32_t height)
 {
     if (!device) {
@@ -470,7 +498,8 @@ void NrdDenoiser::ResetHistory()
 #if PT_ENABLE_NRD && __has_include(<NRD.h>)
 
 ID3D11ShaderResourceView* NrdDenoiser::ResolveSRV(const nrd::ResourceDesc& res,
-                                                    const NrdGBufferInputs& in) const
+                                                    const NrdGBufferInputs& in,
+                                                    const NrdDenoisedOutputs& out) const
 {
     switch (res.type) {
     case nrd::ResourceType::IN_MV:                    return in.motionVector;
@@ -478,6 +507,9 @@ ID3D11ShaderResourceView* NrdDenoiser::ResolveSRV(const nrd::ResourceDesc& res,
     case nrd::ResourceType::IN_VIEWZ:                  return in.viewZ;
     case nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST:  return in.diffuseRadiance;
     case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:  return in.specularRadiance;
+    case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST: return out.diffuseSrv;
+    case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST: return out.specularSrv;
+    case nrd::ResourceType::IN_SIGNAL:                 return in.diffuseRadiance;
     case nrd::ResourceType::TRANSIENT_POOL:
         return (res.indexInPool < m_transientPool.size())
                ? m_transientPool[res.indexInPool].srv.Get() : nullptr;
@@ -496,6 +528,7 @@ ID3D11UnorderedAccessView* NrdDenoiser::ResolveUAV(const nrd::ResourceDesc& res,
     case nrd::ResourceType::IN_MV:                   return out.motionVector;
     case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST: return out.diffuse;
     case nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST: return out.specular;
+    case nrd::ResourceType::OUT_SIGNAL:              return out.diffuse;
     case nrd::ResourceType::TRANSIENT_POOL:
         return (res.indexInPool < m_transientPool.size())
                ? m_transientPool[res.indexInPool].uav.Get() : nullptr;

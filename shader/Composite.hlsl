@@ -24,10 +24,5 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     float3 specular = NrdYCoCgToLinear(g_specularRadiance[id.xy].rgb);
     float3 emissive = g_emissive[id.xy].rgb;
 
-    // DEBUG: show raw diffuse YCoCg Y (luminance) × 20 as green channel
-    // to diagnose whether diffuse buffer has any signal.
-    // Remove this block once confirmed.
-    float diffuseY = g_diffuseRadiance[id.xy].r; // Y channel of YCoCg
-    float specularY = g_specularRadiance[id.xy].r;
-    g_compositeOutput[id.xy] = float4(diffuseY * 20.0f, specularY * 20.0f, emissive.r, 1.0f);
+    g_compositeOutput[id.xy] = float4(diffuse + specular + emissive, 1.0f);
 }

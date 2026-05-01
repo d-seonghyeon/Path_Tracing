@@ -13,7 +13,7 @@
 #include "nrd_denoiser.h"
 
 // -------------------------------------------------------
-// GPU 상수 버퍼 - 카메라 파라미터 (PathTracer cbuffer b0)
+// GPU ?곸닔 踰꾪띁 - 移대찓???뚮씪誘명꽣 (PathTracer cbuffer b0)
 // -------------------------------------------------------
 struct GlobalUniforms {
     glm::vec3 cameraPos;
@@ -46,14 +46,14 @@ private:
     // --- Compute Programs ---
     ComputeProgramUPtr m_pathTracerProgram;
     ComputeProgramUPtr m_compositeProgram;
-    ComputeProgramUPtr m_toneMapProgram;    // [추가] 톤맵 전용 프로그램
+    ComputeProgramUPtr m_toneMapProgram;    // [異붽?] ?ㅻ㏊ ?꾩슜 ?꾨줈洹몃옩
 
-    // 출력 텍스처 (LDR 표시용)
+    // 異쒕젰 ?띿뒪泥?(LDR ?쒖떆??
     ComPtr<ID3D11Texture2D>           m_outputTexture;
     ComPtr<ID3D11UnorderedAccessView> m_outputUAV;
     ComPtr<ID3D11ShaderResourceView>  m_outputSRV;
 
-    // HDR 합성 버퍼 (Composite 결과)
+    // HDR ?⑹꽦 踰꾪띁 (Composite 寃곌낵)
     ComPtr<ID3D11Texture2D>           m_compositeTexture;
     ComPtr<ID3D11UnorderedAccessView> m_compositeUAV;
     ComPtr<ID3D11ShaderResourceView>  m_compositeSRV;
@@ -87,7 +87,7 @@ private:
     ComPtr<ID3D11UnorderedAccessView> m_emissiveUAV;
     ComPtr<ID3D11ShaderResourceView>  m_emissiveSRV;
 
-    // NRD denoised 출력 (Composite 패스 입력 — NRD stub 시 G-buffer 복사본)
+    // NRD denoised 異쒕젰 (Composite ?⑥뒪 ?낅젰 ??NRD stub ??G-buffer 蹂듭궗蹂?
     ComPtr<ID3D11Texture2D>           m_denoisedDiffuseTexture;
     ComPtr<ID3D11UnorderedAccessView> m_denoisedDiffuseUAV;
     ComPtr<ID3D11ShaderResourceView>  m_denoisedDiffuseSRV;
@@ -121,7 +121,7 @@ private:
     uint32_t m_meshCount  { 0 };
     uint32_t m_lightCount { 0 };
 
-    // 상수 버퍼
+    // ?곸닔 踰꾪띁
     BufferUPtr m_globalBuffer;
 
     // --- Camera State ---
@@ -136,11 +136,10 @@ private:
     glm::mat4 m_prevViewProj { 1.0f };
     glm::mat4 m_prevView     { 1.0f };
 
-    // A/B 토글 — F1 로 denoise on/off (Phase 4)
-    // 기본값 false: 시작 시 raw(노이즈) 씬 즉시 표시, F1로 denoiser 켜면 warm-up 시작
+    // A/B ?좉? ??F1 濡?denoise on/off (Phase 4)
+    // 湲곕낯媛?false: ?쒖옉 ??raw(?몄씠利? ??利됱떆 ?쒖떆, F1濡?denoiser 耳쒕㈃ warm-up ?쒖옉
     bool m_denoiseEnabled { false };
-
-    // F2 스크린샷 캡처 (Phase 4 FLIP/SSIM 비교용)
+    // F2 screenshot capture (Phase 4 FLIP/SSIM comparison)
     ComPtr<ID3D11Device> m_device;
     bool     m_captureRequested { false };
     uint32_t m_captureIndex     { 0 };

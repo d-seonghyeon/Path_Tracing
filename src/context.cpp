@@ -6,7 +6,7 @@
 #include <stb/stb_image_write.h>
 
 // -------------------------------------------------------
-// 지오메트리 생성 헬퍼 (파일 내부 전용)
+// 筌왖??살컭?紐꺿봺 ??밴쉐 ????(???뵬 ??? ?袁⑹뒠)
 // -------------------------------------------------------
 namespace {
 
@@ -86,42 +86,42 @@ ContextUPtr Context::Create(ID3D11Device *device, ID3D11DeviceContext *ctx) {
 bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
     m_device = device;
 
-    // 1. 패스 트레이서 컴퓨트 셰이더 로드
+    // 1. ??λ뮞 ?紐껋쟿??곴퐣 ?뚮똾踰???怨쀬뵠??嚥≪뮆諭?
     auto cs = Shader::CreateFromFile("shader/PathTracer.hlsl", "CSMain", "cs_5_0");
     if (!cs) return false;
     m_pathTracerProgram = ComputeProgram::Create(device, std::move(cs));
     if (!m_pathTracerProgram) return false;
 
-    // 2. Composite 컴퓨트 셰이더 로드
+    // 2. Composite ?뚮똾踰???怨쀬뵠??嚥≪뮆諭?
     auto compCs = Shader::CreateFromFile("shader/Composite.hlsl", "CSMain", "cs_5_0");
     if (!compCs) return false;
     m_compositeProgram = ComputeProgram::Create(device, std::move(compCs));
     if (!m_compositeProgram) return false;
 
-    // 3. 톤맵 컴퓨트 셰이더 로드
+    // 3. ??삠룋 ?뚮똾踰???怨쀬뵠??嚥≪뮆諭?
     auto tmCs = Shader::CreateFromFile("shader/Tonemap.hlsl", "CSMain", "cs_5_0");
     if (!tmCs) return false;
     m_toneMapProgram = ComputeProgram::Create(device, std::move(tmCs));
     if (!m_toneMapProgram) return false;
 
-    // 4. 글로벌 상수 버퍼 (PathTracer용)
+    // 4. 疫꼲嚥≪뮆苡??怨몃땾 甕곌쑵??(PathTracer??
     m_globalBuffer = Buffer::CreateWithData(
         device, D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC,
         nullptr, sizeof(GlobalUniforms), 1);
     if (!m_globalBuffer) return false;
 
-    // 5. NrdDenoiser (Phase 2 — NRD SDK 미설치 시 stub으로 동작)
+    // 5. NrdDenoiser (Phase 2 ??NRD SDK 沃섎챷苑뺟㎉???stub??곗쨮 ??덉삂)
     m_nrdDenoiser = NrdDenoiser::Create(device, WINDOW_WIDTH, WINDOW_HEIGHT);
     if (!m_nrdDenoiser) return false;
     SPDLOG_INFO("NrdDenoiser backend status: {}", m_nrdDenoiser->GetBackendStatusLabel());
 
-    // 6. 모델 (절차적 씬 사용)
+    // 6. 筌뤴뫀??(??됯컧????????
     m_model = nullptr;
 
-    // 7. 씬 버퍼 빌드
+    // 7. ??甕곌쑵????슢諭?
     if (!BuildSceneBuffers(device)) return false;
 
-    // 8. 출력 텍스처 생성
+    // 8. ?곗뮆????용뮞筌???밴쉐
     OnResize(device, WINDOW_WIDTH, WINDOW_HEIGHT);
     return true;
 }
@@ -177,7 +177,7 @@ bool Context::BuildSceneBuffers(ID3D11Device *device) {
 
     m_meshCount = (uint32_t)meshInfos.size();
 
-    // BVH 빌드
+    // BVH ??슢諭?
     {
         uint32_t totalTris = (uint32_t)(allIndices.size() / 3);
         std::vector<uint32_t> triMesh(totalTris);
@@ -208,7 +208,7 @@ bool Context::BuildSceneBuffers(ID3D11Device *device) {
         SPDLOG_INFO("BVH built: {} nodes, {} prims", bvh.Nodes().size(), bvh.Prims().size());
     }
 
-    // GPU 버퍼 생성
+    // GPU 甕곌쑵????밴쉐
     m_vertexBuffer = Buffer::CreateWithData(
         device, D3D11_BIND_SHADER_RESOURCE, D3D11_USAGE_DEFAULT,
         allVertices.data(), sizeof(Vertex), (uint32_t)allVertices.size(),
@@ -237,7 +237,7 @@ bool Context::BuildSceneBuffers(ID3D11Device *device) {
     if (!m_materialBuffer) return false;
     m_materialSRV = m_materialBuffer->CreateSRV(device);
 
-    // 광원 버퍼 (t6)
+    // ?용쵐??甕곌쑵??(t6)
     m_lightCount = (uint32_t)desc.lights.size();
     if (m_lightCount > 0) {
         m_lightBuffer = Buffer::CreateWithData(
@@ -436,7 +436,7 @@ void Context::OnResize(ID3D11Device *device, uint32_t width, uint32_t height) {
 
 void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t height) {
     // -------------------------------------------------------
-    // 카메라 벡터 계산
+    // 燁삳?李??甕겸돧苑??④쑴沅?
     // -------------------------------------------------------
     glm::vec3 front;
     front.x = cos(glm::radians(m_pitch)) * cos(glm::radians(m_yaw));
@@ -445,12 +445,12 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     m_cameraFront = glm::normalize(front);
     glm::vec3 right = glm::normalize(glm::cross(m_cameraFront, m_cameraUp));
     glm::mat4 view = glm::lookAtRH(m_cameraPos, m_cameraPos + m_cameraFront, m_cameraUp);
-    glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(45.0f), (float)width / (float)height, 0.1f, 1000.0f);
+    glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(45.0f), (float)width / (float)height, 0.1f, 500000.0f);
     glm::mat4 currViewProj = proj * view;
     glm::mat4 prevViewProj = (m_frameCount == 0) ? currViewProj : m_prevViewProj;
 
     // -------------------------------------------------------
-    // 패스 1: PathTracer — G-buffer 7종 생성
+    // ??λ뮞 1: PathTracer ??G-buffer 7????밴쉐
     // -------------------------------------------------------
     {
         GlobalUniforms globalData;
@@ -466,11 +466,11 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         globalData.currViewProj = glm::transpose(currViewProj);
         m_globalBuffer->UpdateData(context, globalData);
 
-        // b0: PathTracer 상수 버퍼
+        // b0: PathTracer ?怨몃땾 甕곌쑵??
         auto gBuf = m_globalBuffer->GetBuffer();
         context->CSSetConstantBuffers(0, 1, &gBuf);
 
-        // t0~t6: 씬 데이터 SRV
+        // t0~t6: ???怨쀬뵠??SRV
         ID3D11ShaderResourceView *srvs[7] = {
             m_vertexSRV.Get(),
             m_indexSRV.Get(),
@@ -493,12 +493,12 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         };
         context->CSSetUnorderedAccessViews(0, 7, uavs, nullptr);
 
-        // Dispatch (PathTracer: 16x16 스레드 그룹)
+        // Dispatch (PathTracer: 16x16 ??살쟿??域밸챶竊?
         uint32_t gx = (width  + 15) / 16;
         uint32_t gy = (height + 15) / 16;
         m_pathTracerProgram->Dispatch(context, gx, gy, 1);
 
-        // PathTracer 리소스 해제
+        // PathTracer ?귐딅꺖????곸젫
         ID3D11UnorderedAccessView *nullUAV[7] = {};
         context->CSSetUnorderedAccessViews(0, 7, nullUAV, nullptr);
         ID3D11ShaderResourceView *nullSRVs[7] = {};
@@ -506,9 +506,9 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     // -------------------------------------------------------
-    // 패스 2: NRD Denoise — G-buffer → denoised diffuse/specular
-    //   m_denoiseEnabled=false 시 패스 전체 스킵 (A/B 토글 F1).
-    //   NRD SDK 미연결 시 G-buffer를 denoised 텍스처로 그대로 복사(stub).
+    // ??λ뮞 2: NRD Denoise ??G-buffer ??denoised diffuse/specular
+    //   m_denoiseEnabled=false ????λ뮞 ?袁⑷퍥 ??쎄땁 (A/B ?醫? F1).
+    //   NRD SDK 沃섎챷肉겼칰???G-buffer??denoised ??용뮞筌ｌ꼶以?域밸챶?嚥?癰귣벊沅?stub).
     // -------------------------------------------------------
     bool useDenoiser = m_denoiseEnabled && m_nrdDenoiser && m_nrdDenoiser->HasUsableBackend();
 
@@ -521,6 +521,8 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         nrdIn.motionVector     = m_motionVectorSRV.Get();
 
         NrdDenoisedOutputs nrdOut = {};
+        nrdOut.diffuseSrv = m_denoisedDiffuseSRV.Get();
+        nrdOut.specularSrv = m_denoisedSpecularSRV.Get();
         nrdOut.diffuse  = m_denoisedDiffuseUAV.Get();
         nrdOut.specular = m_denoisedSpecularUAV.Get();
         nrdOut.motionVector = m_motionVectorUAV.Get();
@@ -538,9 +540,9 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     // -------------------------------------------------------
-    // 패스 3: Composite — (denoised or raw) diffuse * albedo + specular + emissive
-    //   m_denoiseEnabled=true  → denoised 텍스처 (NRD 출력 또는 stub 복사본)
-    //   m_denoiseEnabled=false → 원본 G-buffer 직접 사용 (A/B 레퍼런스)
+    // ??λ뮞 3: Composite ??(denoised or raw) diffuse * albedo + specular + emissive
+    //   m_denoiseEnabled=true  ??denoised ??용뮞筌?(NRD ?곗뮆???癒?뮉 stub 癰귣벊沅쀨퉪?
+    //   m_denoiseEnabled=false ???癒?궚 G-buffer 筌욊낯??????(A/B ??딅쓠?怨쀫뮞)
     // -------------------------------------------------------
     {
         ID3D11ShaderResourceView* diffSRV = useDenoiser
@@ -576,23 +578,23 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     }
 
     // -------------------------------------------------------
-    // 패스 4: ToneMap — Composite HDR → LDR 출력
+    // ??λ뮞 4: ToneMap ??Composite HDR ??LDR ?곗뮆??
     // -------------------------------------------------------
     {
-        // t10: Composite 결과를 SRV로 읽기
+        // t10: Composite 野껉퀗?든몴?SRV嚥???꾨┛
         ID3D11ShaderResourceView *tmSRVs[1] = { m_compositeSRV.Get() };
         context->CSSetShaderResources(10, 1, tmSRVs);
 
-        // u1: LDR 출력 UAV
+        // u1: LDR ?곗뮆??UAV
         ID3D11UnorderedAccessView *tmUAVs[2] = { nullptr, m_outputUAV.Get() };
         context->CSSetUnorderedAccessViews(0, 2, tmUAVs, nullptr);
 
-        // Dispatch (ToneMap: 8x8 스레드 그룹)
+        // Dispatch (ToneMap: 8x8 ??살쟿??域밸챶竊?
         uint32_t gx = (width  + 7) / 8;
         uint32_t gy = (height + 7) / 8;
         m_toneMapProgram->Dispatch(context, gx, gy, 1);
 
-        // ToneMap 리소스 해제
+        // ToneMap ?귐딅꺖????곸젫
         ID3D11UnorderedAccessView *nullUAV[2] = { nullptr, nullptr };
         context->CSSetUnorderedAccessViews(0, 2, nullUAV, nullptr);
         ID3D11ShaderResourceView *nullSRV[1] = { nullptr };
@@ -602,10 +604,10 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     m_prevViewProj = currViewProj;
     m_prevView     = view;
 
-    // F2 스크린샷 캡처 (Phase 4 FLIP/SSIM 비교용)
+    // F2 ??쎄쾿?깃퀣爰?筌╈돦荑?(Phase 4 FLIP/SSIM ??쑨???
     CaptureScreenshot(context);
 
-    // 프레임 카운터 증가
+    // ?袁⑥쟿??燁삳똻???筌앹빓?
     m_frameCount++;
 }
 
@@ -622,17 +624,22 @@ void Context::CaptureScreenshot(ID3D11DeviceContext* ctx) {
 
     ComPtr<ID3D11Texture2D> staging;
     HRESULT hr = m_device->CreateTexture2D(&texDesc, nullptr, staging.GetAddressOf());
-    if (FAILED(hr)) { SPDLOG_ERROR("CaptureScreenshot: CreateTexture2D 0x{:08x}", (uint32_t)hr); return; }
+    if (FAILED(hr)) {
+        SPDLOG_ERROR("CaptureScreenshot: CreateTexture2D 0x{:08x}", (uint32_t)hr);
+        return;
+    }
 
     ctx->CopyResource(staging.Get(), m_outputTexture.Get());
 
     D3D11_MAPPED_SUBRESOURCE mapped;
     hr = ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) { SPDLOG_ERROR("CaptureScreenshot: Map 0x{:08x}", (uint32_t)hr); return; }
+    if (FAILED(hr)) {
+        SPDLOG_ERROR("CaptureScreenshot: Map 0x{:08x}", (uint32_t)hr);
+        return;
+    }
 
-    std::string label    = m_denoiseEnabled ? "denoised" : "raw";
+    std::string label = m_denoiseEnabled ? "denoised" : "raw";
     std::string filename = "capture_" + std::to_string(m_captureIndex++) + "_" + label + ".png";
-
     stbi_write_png(filename.c_str(),
                    (int)texDesc.Width, (int)texDesc.Height, 4,
                    mapped.pData, (int)mapped.RowPitch);
@@ -674,7 +681,7 @@ void Context::ProcessKeyboard(float deltaTime) {
     if (GetAsyncKeyState('E') & 0x8000) { m_cameraPos += m_cameraUp * speed;     moved = true; }
     if (GetAsyncKeyState('Q') & 0x8000) { m_cameraPos -= m_cameraUp * speed;     moved = true; }
 
-    // F1: A/B 토글 — denoise on/off (하위 비트 = 이번 호출 전까지 눌렸는지 여부)
+    // F1: A/B ?醫? ??denoise on/off (??륁맄 ??쑵??= ??苡??紐꾪뀱 ?袁㏉돱筌왖 ???죬?遺? ???)
     if (GetAsyncKeyState(VK_F1) & 0x0001) {
         m_denoiseEnabled = !m_denoiseEnabled;
         m_frameCount = 0;
@@ -693,7 +700,7 @@ void Context::ProcessKeyboard(float deltaTime) {
         if (m_nrdDenoiser) m_nrdDenoiser->ResetHistory();
     }
 
-    // F2: 스크린샷 캡처 요청 (Phase 4 FLIP/SSIM 비교용)
+    // F2: 筌ㅼ뮇伊?LDR ??쎄쾿?깃퀣爰?(疫꿸퀣??F2 ??덉삂)
     if (GetAsyncKeyState(VK_F2) & 0x0001) {
         m_captureRequested = true;
         SPDLOG_INFO("Screenshot requested (frame={}, denoise={})", m_frameCount, m_denoiseEnabled);
