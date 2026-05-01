@@ -76,7 +76,7 @@ private:
     std::vector<ComPtr<ID3D11ComputeShader>> m_pipelines;
     std::vector<NrdPoolEntry>                m_permanentPool;
     std::vector<NrdPoolEntry>                m_transientPool;
-    ComPtr<ID3D11SamplerState>               m_samplers[2]; // [0]=nearest clamp, [1]=linear clamp
+    ComPtr<ID3D11SamplerState>               m_samplers[4]; // indexed by nrd::Sampler enum value
     ComPtr<ID3D11Buffer>                     m_constantBuffer;
 
     ID3D11ShaderResourceView*  ResolveSRV(const nrd::ResourceDesc& res,

@@ -217,20 +217,37 @@ bool NrdDenoiser::Init(ID3D11Device* device, uint32_t width, uint32_t height)
         }
     }
 
-    // 5. ??묐탣??(NEAREST_CLAMP, LINEAR_CLAMP)
+    // 5. Samplers — indexed by nrd::Sampler enum value:
+    //   [0] NEAREST_CLAMP           [1] NEAREST_MIRRORED_REPEAT
+    //   [2] LINEAR_CLAMP            [3] LINEAR_MIRRORED_REPEAT
     {
         D3D11_SAMPLER_DESC sd = {};
-        sd.AddressU      = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sd.MaxLOD        = D3D11_FLOAT32_MAX;
+        sd.MaxLOD         = D3D11_FLOAT32_MAX;
         sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
 
-        sd.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        // [0] NEAREST_CLAMP
+        sd.Filter   = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
         HRESULT hr = device->CreateSamplerState(&sd, m_samplers[0].ReleaseAndGetAddressOf());
-        if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: nearest sampler 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
+        if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: sampler[0] 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
 
-        sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        // [1] NEAREST_MIRRORED_REPEAT
+        sd.Filter   = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_MIRROR;
         hr = device->CreateSamplerState(&sd, m_samplers[1].ReleaseAndGetAddressOf());
-        if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: linear sampler 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
+        if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: sampler[1] 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
+
+        // [2] LINEAR_CLAMP
+        sd.Filter   = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        hr = device->CreateSamplerState(&sd, m_samplers[2].ReleaseAndGetAddressOf());
+        if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: sampler[2] 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
+
+        // [3] LINEAR_MIRRORED_REPEAT
+        sd.Filter   = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_MIRROR;
+        hr = device->CreateSamplerState(&sd, m_samplers[3].ReleaseAndGetAddressOf());
+        if (FAILED(hr)) { SPDLOG_ERROR("NrdDenoiser: sampler[3] 0x{:08x}", (uint32_t)hr); DestroyBackend(); m_isInitialized = true; return true; }
     }
 
     // 6. ?怨몃땾 甕곌쑵??(筌ㅼ뮆? dispatch ??由? 16獄쏅뗄????類ｌ졊)
