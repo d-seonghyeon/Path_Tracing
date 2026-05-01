@@ -8,7 +8,7 @@
 ## 0. Current Phase
 
 - Active phase: `Phase 3 - Quality tuning`
-- Detailed sub-phase: `P3-4 - Systematic black-output debug (localization-first; stop blind patching)`
+- Detailed sub-phase: `P3-5 - REBLUR quality tuning after black-output fix`
 - Blocked: `No`
 - Branch: `feature/nrd-phase0`
 
@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `f696630` |
+| Hash | `d6aaf7c` |
 | Author | choi mun chan |
-| Date | 2026-04-20 |
-| Scope | `P3` Remove demodulate/remodulate path + debug Composite + `denoisingRange` |
-| Summary | Removed NRD material demodulation block from `PathTracer.hlsl` and the matching remodulation from `Composite.hlsl`; `Composite.hlsl` now temporarily visualizes raw `diffuse/specular` Y-channel × 20 to confirm whether the diffuse buffer carries any signal pre-composite; `NrdFrontend.hlsli` clamps `NrdYCoCgToLinear` with `max(.., 0)`; `nrd_denoiser.cpp` sets `cs.denoisingRange = 500000.0f` for large worlds. Capture path still produces emissive-only black on `F1=ON`. |
+| Date | 2026-05-01 |
+| Scope | `P3` NRD REBLUR internal SRV binding fix |
+| Summary | Fixed the black-output root cause by resolving `OUT_DIFF_RADIANCE_HITDIST` / `OUT_SPEC_RADIANCE_HITDIST` as SRVs for REBLUR internal read-after-write passes, restored normal Composite output, removed temporary debug controls, and kept only F1 denoise toggle plus F2 screenshot capture. |
 
 ---
 
@@ -67,48 +67,30 @@ Phase 4 - Validation / A-B
 
 Do exactly one next action, not a vague "continue".
 
-Current next action supersedes the older B5 text below:
+Current next action supersedes the older B12 text below:
 
 ```
-[B10 of P3-4] Do one clean manual quality pass after black-output fix.
+[B13 of P3-5] Decide whether to keep and commit the B11/B12 quality sweep.
 
 Done in this workspace:
-- Removed temporary F3/F4/F5/F6/F7/F8/F9 debug controls and the REFERENCE /
-  split-screen / dispatch-bypass / internal-stop plumbing.
-- Kept only user-facing F1 denoise toggle and F2 screenshot capture.
-- Kept the real fix: OUT_DIFF/OUT_SPEC SRV resolution for REBLUR internal
-  read-after-write passes.
-- Debug build passed.
-- Runtime smoke test passed: F1 ON + F2 saved `capture_0_denoised.png`;
-  stdout shows sane `motionVectorScale=(0.001042,0.001852)` and no stderr.
+- B11 detail-retention parameter sweep applied in `src/nrd_denoiser.cpp`.
+- Reduced prepass radii (`16/28`), max blur radius (`18`), and history
+  length (`24/4`) while keeping the working REBLUR path intact.
+- Debug `ALL_BUILD` passed.
+- Runtime F1 OFF / F1 ON capture passed with no stderr.
+- `capture_1_denoised.png` remains visible and appears slightly less smeared
+  than the B10 baseline, especially around water reflections and distant
+  geometry, but side-wall dark smearing still needs a motion check.
+- B12 automated motion probe passed: after F1 ON, a short D-key camera move
+  produced `capture_0_denoised.png` immediately after movement and
+  `capture_1_denoised.png` after settling, with no stderr and no obvious
+  long-lived ghost trail in the captured frames.
 
 Next concrete action:
-Run the app manually, compare F1 OFF vs F1 ON in the normal Composite path,
-and decide whether P3-4 can close or whether quality tuning should continue
-with the now-working REBLUR path.
+Have the user visually review the B10/B11/B12 captures. If acceptable, commit
+`src/nrd_denoiser.cpp`, `STATUS.md`, and the deletion of
+`NRD_BLACK_OUTPUT_DEBUG.md`; if not, roll back only the B11 parameter sweep.
 ```
-
-```
-[B5 of P3-4] Run Debug\PT_Object_Loading.exe with the viewZScale fix, then:
-
-  Step 1 — press F1=ON (NRD 활성화, F5는 누르지 않음)
-  Step 2 — 화면을 관찰 또는 F2로 캡처:
-    * 화면에 노이즈 있는/denoised 장면이 보임
-      → viewZScale=0 (MSVC zero-init bug) 이 root cause 였음 → 버그 해결됨
-      → 다음: debug overlay 제거 (Composite.hlsl 원복), F3/F4/F5 키 제거
-    * 여전히 검정
-      → viewZScale 이외의 다른 원인 존재 → stdout의 SetCommonSettings 로그 확인:
-         "NRD SetCommonSettings [f=0]: viewZScale=1.0000 ..." → settings OK
-         "SetCommonSettings failed" → NRD API 오류 → 다른 field 점검
-
-  stdout에서 다음 로그 확인:
-    "NRD SetCommonSettings [f=0]: viewZScale=1.0000 denoisingRange=500000.0 ..."
-    "SetCommonSettings failed" 가 없어야 함
-
-  Record verdict in §5 Session Log.
-```
-
-Owner: user (visual compare + stdout check) → Claude (next phase)
 
 ---
 
@@ -154,7 +136,9 @@ Owner: user (visual compare + stdout check) → Claude (next phase)
 - A targeted startup-response tuning pass on 2026-04-18 (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`) did not materially improve the early near-black warm-up compared with the post-hit-distance-fix baseline.
 - A follow-up NEE audit on 2026-04-18 found that primary and indirect direct-light contributions were still carrying little or no representative hit distance. Local shader edits now pass `lightHitDist` out of `SampleDirectLight(...)` and choose a luminance-weighted representative hit distance for the diffuse/specular channels, which produced a visibly brighter settled static frame than the previous primary-hit-distance-only fix.
 - Root cause of persistent dark collapse identified on 2026-04-18: `SampleDirectLight` returns `(kD * albedo/PI + specular) * emission * NdotL / pdf`, so `result.diffuse` already contains albedo from the Lambertian BRDF. The old Composite formula `diffuse * albedo + specular + emissive` was double-multiplying albedo, making dark materials (albedo ~0.1) appear ~10x too dark. Fixed by changing Composite to `diffuse + specular + emissive` and removing the incorrect `diffuse / primaryAlbedo` demodulation from PathTracer.
-- Codex follow-up on 2026-04-18 added three more patches on top of the prior audit: `glm::perspectiveRH_ZO` for the NRD-facing projection, `IN_MV` UAV binding for REBLUR temporal stabilization, and a new demodulate/remodulate path (`PathTracer.hlsl` divides by NRD-style material factors, `Composite.hlsl` multiplies them back using `g_normalRoughness`). Debug build passed, automated `F1/F2` capture succeeded, but the newest pair (`build/capture_0_raw.png`, `build/capture_1_denoised.png`) still shows the denoised image collapsing to emissive-only black. Treat this as the current unresolved state.
+- P3-4 black-output debug is closed as of 2026-05-01. The root cause was missing SRV resolution for REBLUR internal `OUT_DIFF_RADIANCE_HITDIST` / `OUT_SPEC_RADIANCE_HITDIST` read-after-write passes; F1 ON now produces a visible normal-color denoised image.
+- B11 detail-retention sweep reduced REBLUR blur/history settings (`diffuse/specularPrepassBlurRadius=16/28`, `maxBlurRadius=18`, `maxAccumulatedFrameNum=24`, `maxFastAccumulatedFrameNum=4`). Static capture looks slightly less smeared than B10.
+- B12 automated D-key camera-motion probe did not show an obvious long-lived ghost trail between the immediate and settled denoised captures. The sweep is a reasonable keep candidate, pending user visual review.
 
 ### F2 Screenshot Capture (Phase 4 FLIP/SSIM)
 
@@ -184,10 +168,10 @@ No critical conflicts found. Details:
 
 ## 4. Open Questions
 
-1. Does the embedded NRD DXBC expect a stricter `IN_NORMAL_ROUGHNESS` resource format / semantic contract than our current `R16G16B16A16_FLOAT` + local oct-pack path? (Answer should fall out of Phase C1 of §7.)
-2. Is the bug actually inside REBLUR, or in the bracket around it (PathTracer outputs / Composite decode)? §7 Phase A is designed to answer exactly this before any further fixes.
-3. When the root cause is fixed, should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format later?
-4. Does the NRD validation layer (`CommonSettings.enableValidation`) actually emit a useful overlay in our DX11-direct path (no NRI), or do we need to consume it manually? (Answer in Phase B1.)
+1. Does the B11 lower-blur sweep introduce ghost trails or unacceptable noise during camera motion?
+2. Can the remaining side-wall dark smearing be improved with REBLUR parameters alone, or does it require another G-buffer / hit-distance semantic audit?
+3. Should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format later?
+4. Does the NRD validation layer (`CommonSettings.enableValidation`) emit anything useful in the DX11-direct path (no NRI), or would validation need a custom hook?
 
 ---
 
@@ -196,6 +180,9 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-01 | Codex       | P3-5 | B12 automated camera-motion probe completed for the B11 lower-blur sweep. Started with F1 ON, held D briefly, captured `capture_0_denoised.png` immediately after movement and `capture_1_denoised.png` after roughly 4 seconds of settling. The app stayed alive, stdout showed normal NRD settings logs, stderr was empty, and the viewed captures did not show an obvious long-lived ghost trail. Verdict: B11 sweep is a keep candidate, pending user visual review before commit.
+2026-05-01 | Codex       | P3-5 | B11 detail-retention sweep applied. Reduced REBLUR prepass radii from `24/42` to `16/28`, max history from `28/5` to `24/4`, added `minBlurRadius=0.75` and `maxBlurRadius=18`, and moved rejection settings closer to defaults (`minHitDistanceWeight=0.12`, `lobeAngleFraction=0.16`, `roughnessFraction=0.16`, `planeDistanceSensitivity=0.025`). Debug `ALL_BUILD` passed. Automated F1 OFF / F1 ON capture passed after retrying with `WScript.Shell.SendKeys`; `capture_1_denoised.png` remains visible and looks slightly less smeared around water reflections/distant geometry than the saved B10 baseline, with no stderr. Next: manual camera-motion probe to catch ghosting/noise regressions before keeping or rolling back this sweep.
+2026-05-01 | Codex       | P3-5 | B10 manual quality pass completed. Automated run captured `capture_0_raw.png` with F1 OFF and `capture_1_denoised.png` after F1 ON in the normal Composite path. Raw output is heavily noisy but correctly lit; denoised output is visible, normally colored, and no longer collapses to emissive-only black. stdout logged `REBLUR_DIFFUSE_SPECULAR ready`, `Denoise ON`, sane `motionVectorScale=(0.001042,0.001852)`, and stderr was empty. Verdict: close P3-4 black-output debug and continue with focused REBLUR detail-retention tuning.
 2026-05-01 | Codex       | P3-4 | B9 cleanup completed after black-output fix. Removed temporary F3/F4/F5/F6/F7/F8/F9 controls plus REFERENCE, split-screen, dispatch-bypass, viewZ-stats, and internal debug-stop plumbing. Left only F1 denoise toggle and F2 screenshot capture. Kept the real OUT_DIFF/OUT_SPEC SRV resolve fix and normal Composite output. Debug build passed. Runtime smoke test passed with F1 ON + F2 capture; stdout now shows sane `motionVectorScale=(0.001042,0.001852)` after fixing a cleanup-induced commented-out `motionVectorScale[0]` assignment. Next: manual F1 OFF/ON quality pass in the normal Composite path.
 2026-05-01 | Codex       | P3-4 | Black-output root cause fixed. B7 showed first black pass was `REBLUR_DiffuseSpecular - Temporal accumulation`; inspection found the wrapper did not resolve `ResourceType::OUT_DIFF_RADIANCE_HITDIST` / `OUT_SPEC_RADIANCE_HITDIST` as SRV inputs, even though Temporal accumulation reads the Pre-pass outputs through those resource types. Added denoised diffuse/specular SRVs to `NrdDenoisedOutputs`, passed them from `Context`, and returned them in `ResolveSRV()` for OUT_DIFF/OUT_SPEC. Restored `Composite.hlsl` from false-color Y-channel debug output to normal `diffuse + specular + emissive`. Debug build passed; F1 ON capture is visible with normal colors, confirming NRD no longer collapses to black. Next: clean up or gate temporary debug keys/logging.
 2026-05-01 | Codex       | P3-4 | B7 run completed: automated F1 + F9/F2 capture ladder from the build/ working directory. Captures: `capture_1_denoised.png` (Pre-pass) is visibly alive with avg luminance 124.474; `capture_2_denoised.png` (Temporal accumulation) drops to emissive-only black with avg luminance 1.954; History fix, Blur, Post-blur, and Temporal stabilization remain black. `Hit distance reconstruction` did not match any dispatch because the current REBLUR settings leave hit-distance reconstruction OFF. Verdict: first black internal pass is `REBLUR_DiffuseSpecular - Temporal accumulation`. Next: add a targeted temporal-isolation mode to distinguish shader/settings/history-input failure from wrapper output-copy/binding failure.
@@ -248,24 +235,11 @@ Newest entry goes on top.
 
 ---
 
-## 7. Black-Output Debug Plan (P3-4)
+## 7. Closed Black-Output Debug Plan (P3-4)
 
-The full phased plan lives in [`NRD_BLACK_OUTPUT_DEBUG.md`](./NRD_BLACK_OUTPUT_DEBUG.md).
+P3-4 closed on 2026-05-01. B10 verified that the normal Composite path
+produces visible, normally colored F1 ON output after the OUT_DIFF /
+OUT_SPEC SRV fix.
 
-Quick map (read the dedicated doc for entry conditions and step
-details):
-
-- **Phase A** — Localize the failing stage with per-stage captures.
-  Mandatory entry point. Verdict = upstream / NRD-internal / downstream.
-- **Phase B** — NRD-internal isolation: `enableValidation`, settings
-  dump, `CLEAR_AND_RESTART`, `REFERENCE` denoiser passthrough.
-- **Phase C** — Upstream audit: byte-compare local packing vs
-  `NRD.hlsli`; visualize `viewZ` / `motionVector` / `baseColor` /
-  `emissive`.
-- **Phase D** — Downstream audit: bypass NRD, verify SRV bindings,
-  YCoCg round-trip, ToneMap divisor.
-- **Phase E** — Reference comparison vs NVIDIA's official DX11
-  sample; fallback to `REFERENCE` denoiser if needed.
-
-`NRD_BLACK_OUTPUT_DEBUG.md` is temporary and must be deleted in the
-same commit that advances `§0` sub-phase past `P3-4`.
+The temporary `NRD_BLACK_OUTPUT_DEBUG.md` plan was removed when advancing
+the active sub-phase past `P3-4`.

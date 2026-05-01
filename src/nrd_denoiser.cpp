@@ -332,20 +332,22 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         reblurSettings.hitDistanceParameters.B = 0.1f;
         reblurSettings.hitDistanceParameters.C = 20.0f;
         reblurSettings.hitDistanceParameters.D = -25.0f;
-        // Third quality pass: keep the moderated anti-lag/history values, but loosen a
-        // few spatial rejection terms so dark areas are less likely to collapse away.
+        // Detail-retention pass: keep history responsive and reduce spatial blur now
+        // that the REBLUR output no longer collapses to black.
         reblurSettings.antilagSettings.luminanceSigmaScale   = 3.5f;
         reblurSettings.antilagSettings.luminanceSensitivity  = 2.5f;
-        reblurSettings.maxAccumulatedFrameNum                = 28;
-        reblurSettings.maxFastAccumulatedFrameNum            = 5;
+        reblurSettings.maxAccumulatedFrameNum                = 24;
+        reblurSettings.maxFastAccumulatedFrameNum            = 4;
         reblurSettings.maxStabilizedFrameNum                 = 0;
         reblurSettings.historyFixBasePixelStride             = 8;
-        reblurSettings.diffusePrepassBlurRadius              = 24.0f;
-        reblurSettings.specularPrepassBlurRadius             = 42.0f;
-        reblurSettings.minHitDistanceWeight                  = 0.18f;
-        reblurSettings.lobeAngleFraction                     = 0.20f;
-        reblurSettings.roughnessFraction                     = 0.20f;
-        reblurSettings.planeDistanceSensitivity              = 0.03f;
+        reblurSettings.diffusePrepassBlurRadius              = 16.0f;
+        reblurSettings.specularPrepassBlurRadius             = 28.0f;
+        reblurSettings.minBlurRadius                         = 0.75f;
+        reblurSettings.maxBlurRadius                         = 18.0f;
+        reblurSettings.minHitDistanceWeight                  = 0.12f;
+        reblurSettings.lobeAngleFraction                     = 0.16f;
+        reblurSettings.roughnessFraction                     = 0.16f;
+        reblurSettings.planeDistanceSensitivity              = 0.025f;
         nrd::Result dsResult = nrd::SetDenoiserSettings(*m_nrdInstance, REBLUR_ID, &reblurSettings);
         if (dsResult != nrd::Result::SUCCESS)
             SPDLOG_ERROR("NrdDenoiser::Denoise: SetDenoiserSettings failed ({})", (uint32_t)dsResult);
