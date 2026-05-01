@@ -259,13 +259,11 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
                 float3 neeContrib = clamp(neeRaw * w * throughput, 0.0f, 50.0f);
 
                 if (bounce == 0) {
-                    // 첫 히트: lobe 가중치로 diffuse/specular 분배
-                    float3 diffuseContrib = neeContrib * lobe.pDiff;
-                    float3 specularContrib = neeContrib * lobe.pSpec;
-                    result.diffuse  += diffuseContrib;
-                    result.specular += specularContrib;
-                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, diffuseContrib, lightHitDist);
-                    UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight, specularContrib, lightHitDist);
+                    // bounce=0 NEE는 전량 diffuse 채널로: NRD_INTEGRATION_PLAN §0-3 권고.
+                    // specular lobe에 직접광을 섞으면 REBLUR specular temporal lobe와
+                    // 방향 불일치가 생겨 specular 가로 번짐이 발생한다.
+                    result.diffuse += neeContrib;
+                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, neeContrib, lightHitDist);
                 } else {
                     if (pathTypeSet && pathIsSpecular) {
                         result.specular += neeContrib;
