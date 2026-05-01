@@ -139,7 +139,7 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
     bool   prevSpecular  = true;
     bool   pathTypeSet   = false;   // 첫 간접 바운스 로브가 결정됐는지
     bool   pathIsSpecular = false;  // true = specular 경로, false = diffuse 경로
-    float  diffusePathLength = 0.0f;
+    float  diffuseFirstHitDist = 0.0f;
     float  specularFirstHitDist = 0.0f;
     float  diffuseHitWeight = 0.0f;
     float  specularHitWeight = 0.0f;
@@ -169,7 +169,8 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
                 if (specularFirstHitDist == 0.0f)
                     specularFirstHitDist = hit.t;
             } else {
-                diffusePathLength += hit.t;
+                if (diffuseFirstHitDist == 0.0f)
+                    diffuseFirstHitDist = hit.t;
             }
         }
 
@@ -215,7 +216,7 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
                 }
                 else {
                     result.diffuse  += emitContrib;
-                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, emitContrib, diffusePathLength);
+                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, emitContrib, diffuseFirstHitDist > 0.0f ? diffuseFirstHitDist : hit.t);
                 }
             }
             break;
@@ -272,7 +273,8 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
                     }
                     else {
                         result.diffuse  += neeContrib;
-                        UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, neeContrib, diffusePathLength + lightHitDist);
+                        float candidateDiffHitDist = diffuseFirstHitDist > 0.0f ? diffuseFirstHitDist : lightHitDist;
+                        UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, neeContrib, candidateDiffHitDist);
                     }
                 }
             }
