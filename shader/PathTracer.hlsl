@@ -91,8 +91,10 @@ float2 ClipToPixel(float4 clipPos, uint2 screenSize) {
 // 카메라 레이 생성 (종횡비를 스크린 실제 크기에서 계산)
 // -------------------------------------------------------
 Ray GenerateCameraRay(uint2 pixelCoord, uint2 screenSize, uint frameCount) {
-    float2 jitter = GetRandomSamples(pixelCoord, 0, frameCount) - 0.5f;
-    float2 uv     = ((float2)pixelCoord + 0.5f + jitter) / (float2)screenSize;
+    // No sub-pixel jitter: REBLUR does its own temporal accumulation and
+    // does not compensate for camera jitter in motion vectors. Per-frame
+    // jitter causes checker/edge blur by blending neighbors across frames.
+    float2 uv = ((float2)pixelCoord + 0.5f) / (float2)screenSize;
     float2 ndc    = float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
 
     float aspectRatio = (float)screenSize.x / (float)screenSize.y;
