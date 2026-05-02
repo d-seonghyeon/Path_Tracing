@@ -357,10 +357,10 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         reblurSettings.maxFastAccumulatedFrameNum            = 4;
         reblurSettings.maxStabilizedFrameNum                 = 30;
         reblurSettings.historyFixBasePixelStride             = 8;
-        reblurSettings.diffusePrepassBlurRadius              = 8.0f;
-        reblurSettings.specularPrepassBlurRadius             = 8.0f;
+        reblurSettings.diffusePrepassBlurRadius              = 6.0f;  // sweep: mid 8→6
+        reblurSettings.specularPrepassBlurRadius             = 6.0f;  // sweep: mid 8→6
         reblurSettings.minBlurRadius                         = 0.5f;
-        reblurSettings.maxBlurRadius                         = 12.0f;
+        reblurSettings.maxBlurRadius                         = 9.0f;  // sweep: mid 12→9
         reblurSettings.minHitDistanceWeight                  = 0.10f;
         reblurSettings.lobeAngleFraction                     = 0.25f;
         reblurSettings.roughnessFraction                     = 0.25f;
