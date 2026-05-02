@@ -7,8 +7,8 @@
 
 ## 0. Current Phase
 
-- Active phase: `Phase 3 - Quality tuning`
-- Detailed sub-phase: `P3-5 - REBLUR quality tuning after black-output fix`
+- Active phase: `Phase 4 - Validation / A-B`
+- Detailed sub-phase: `P4 complete - ready for review / handoff`
 - Blocked: `No`
 - Branch: `feature/nrd-phase0`
 
@@ -68,34 +68,20 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[P3-5] Verify jitter removal effect, then run camera-motion ghosting probe.
+[Handoff] Review and commit the documentation-only validation update.
 
-All P3-5 quality fixes are committed (see §3 "Current REBLUR settings").
-The final fix (c93e521) removed per-frame sub-pixel jitter from
-GenerateCameraRay — this was the root cause of watercolor blur.
+Phase 4 validation is complete enough for handoff:
+  - Debug ALL_BUILD passed after temporary P4-5 instrumentation was removed.
+  - Default-view A/B captures show denoise strongly reduces raw speckle.
+  - Camera-motion probe found no denoiser-only long-lived ghost trail.
+  - Objective metrics favor denoised structurally and after exposure matching.
+  - LDR brightness difference is documented as a ToneMap/distribution effect,
+    not a linear HDR radiance amplification bug.
 
-Step A — Visual verification (required before anything else):
-  1. cmake --build build --config Debug --target ALL_BUILD -j 16
-  2. Run from build/: .\Debug\PT_Object_Loading.exe
-  3. Let settle ~3 sec (temporal history converges), F1 ON, F2 capture.
-  4. Inspect capture_N_denoised.png:
-     - Checker tiles: should show sharp edges (not blended gray)
-     - Building walls: should show visible surface grain, not flat
-     - Puddle reflections: should remain as tight point lights
-  5. Save capture as a baseline named "jitter_removed_on.png".
-
-Step B — Camera-motion ghosting probe:
-  Hold D key 0.5 sec, stop, F2 capture immediately → "ghosting_immediate.png"
-  Wait 4 sec, F2 capture → "ghosting_settled.png"
-  Inspect for long-lived ghost trails. Acceptable = trail gone within 2 sec.
-
-Step C — Decision tree:
-  - If aliasing too harsh on geometry edges: implement Halton-2/3 jitter in
-    GenerateCameraRay and feed offset into NRD CommonSettings.cameraJitter
-    (see NRD.hlsli CommonSettings struct). Keep jitter amplitude ≤ 0.5px.
-  - If ghosting too severe: reduce maxAccumulatedFrameNum 24→16 and
-    tighten antilag: luminanceSigmaScale 3.5→2.5, sensitivity 2.5→3.0.
-  - If still over-blurry: reduce diffusePrepassBlurRadius 8→4.
+Next single action:
+  1. Review the STATUS.md-only diff.
+  2. If acceptable, commit it as a Phase 4 validation handoff note.
+  3. Recommended commit scope: `P4: document NRD validation results`.
 ```
 
 ---
@@ -190,6 +176,58 @@ reblurSettings.planeDistanceSensitivity             = 0.08f; // raised for sharp
 - Output filename: `capture_<index>_<denoised|raw>.png` in the CWD of the exe.
 - Uses a per-call staging texture (D3D11_USAGE_STAGING + CPU_ACCESS_READ), then stb_image_write PNG.
 - `stb_image_write.h` is now copied by `Dependency.cmake` alongside `stb_image.h`.
+- P4-1 accepted default-view A/B captures:
+  - `build/p4_1_raw_default.png`
+  - `build/p4_1_denoised_default.png`
+- P4-2 raw-average validation artifacts:
+  - `build/p4_2_raw_00.png` ... `build/p4_2_raw_15.png`
+  - `build/p4_2_raw_avg16_reference.png`
+  - `build/p4_2_metrics.json`
+  - Metrics vs avg16 reference:
+    - single raw: RMSE 0.12637, MAE 0.06502, PSNR 17.97 dB, global SSIM-style 0.90618
+    - denoised: RMSE 0.12751, MAE 0.08543, PSNR 17.89 dB, global SSIM-style 0.91635
+- P4-3 raw-average validation artifacts:
+  - `build/p4_3_raw_00.png` ... `build/p4_3_raw_63.png`
+  - `build/p4_3_raw_avg64_reference.png`
+  - `build/p4_3_metrics.json`
+  - Metrics vs avg64 reference:
+    - single raw: RMSE 0.12066, MAE 0.06160, PSNR 18.37 dB, global SSIM-style 0.91413, mean luma 0.42404
+    - denoised: RMSE 0.12484, MAE 0.08320, PSNR 18.07 dB, global SSIM-style 0.92003, mean luma 0.48350
+    - single raw exposure-matched: RMSE 0.12061, MAE 0.06167, PSNR 18.37 dB, global SSIM-style 0.91416
+    - denoised exposure-matched: RMSE 0.10214, MAE 0.06785, PSNR 19.82 dB, global SSIM-style 0.92879
+- P4-4 denoised timing artifacts:
+  - `build/p4_4_denoised_2s.png`
+  - `build/p4_4_denoised_6s.png`
+  - `build/p4_4_denoised_12s.png`
+  - `build/p4_4_timing_metrics.json`
+  - Mean luma vs avg64 reference 0.42389:
+    - 2s: 0.48347, exposure scale 0.87676, exposure-matched RMSE 0.10282, SSIM-style 0.92768
+    - 6s: 0.48340, exposure scale 0.87690, exposure-matched RMSE 0.10209, SSIM-style 0.92888
+    - 12s: 0.48322, exposure scale 0.87723, exposure-matched RMSE 0.10203, SSIM-style 0.92902
+- P4-5 brightness-bias localization artifacts:
+  - `build/p4_5_composite_stats_raw.txt`
+  - `build/p4_5_composite_stats_denoised.txt`
+  - `build/p4_5_raw_ldr.png`
+  - `build/p4_5_denoised_ldr.png`
+  - Raw pre-ToneMap HDR composite: mean luma 1.00606, ACES+gamma mean luma 0.42381
+  - Denoised pre-ToneMap HDR composite: mean luma 0.97407, ACES+gamma mean luma 0.48320
+  - Interpretation: denoised linear HDR mean is lower than raw, but ToneMap maps denoised distribution to a brighter LDR mean.
+- P4-6 ToneMap calibration policy:
+  - No denoised-only exposure multiplier for Phase 4.
+  - Preserve identical Composite/ToneMap code for raw and denoised A/B.
+  - Treat LDR brightness difference as documented ToneMap/distribution behavior.
+  - Future exposure parity should use a real auto-exposure/calibration pass, not a hard-coded default-view scalar.
+
+### Phase 4 Final Validation Summary
+
+- **Accepted rendering state**: F1 ON denoised path is usable for the current procedural city scene. It keeps normal color/lighting, avoids the previous black-output failure, and removes most raw speckle.
+- **Static A/B**: `build/p4_1_raw_default.png` vs `build/p4_1_denoised_default.png` shows a clear visual denoise win with no watercolor-level blur regression in the default view.
+- **Motion probe**: `build/ghosting_immediate.png` and `build/ghosting_settled.png` did not show a denoiser-only long-lived ghost trail. The right-lamp teardrop shape also exists in `build/ghosting_raw_compare.png`, so it is not classified as REBLUR ghosting.
+- **Reference metrics**: avg64 reference (`build/p4_3_raw_avg64_reference.png`) produced mixed raw pixel RMSE because denoised LDR has a brightness/distribution shift, but denoised wins on global SSIM-style and exposure-matched RMSE/PSNR.
+- **Brightness caveat**: denoised LDR mean is higher than raw/reference after ACES+gamma, but P4-5 showed denoised pre-ToneMap HDR composite mean is lower than raw. The difference is a ToneMap/distribution interaction, not simple NRD energy amplification.
+- **Policy**: do not apply a denoised-only hard-coded exposure scalar in Phase 4. If exposure parity becomes a requirement, build a proper auto-exposure/calibration pass and validate it across multiple views/scenes.
+- **Known limitations**: validation covers the default procedural city view plus one D-key movement probe. It is not a full multi-scene FLIP/SSIM campaign, and `CommonSettings.enableValidation` remains effectively unused because `OUT_VALIDATION` has no texture/display path.
+- **Recommended next PR**: document/commit Phase 4 validation results first. A separate follow-up can add multi-view validation automation or an optional auto-exposure path.
 
 ### Phase 2 [C] Review - Binding / Slot / Resource Lifetime
 
@@ -212,11 +250,13 @@ No critical conflicts found. Details:
 
 ## 4. Open Questions
 
-1. **[Must verify]** Does jitter removal produce acceptable geometric edge quality, or is Halton jitter + `CommonSettings.cameraJitter` needed?
-2. **[Must verify]** Do the new REBLUR settings (prepass=8/8, maxBlur=12, A=30) produce ghost trails on camera movement? Probe: D-key 0.5s → immediate capture → 4s settle → settled capture.
-3. Can the remaining noise on indirect-lit surfaces (dark building sides) be reduced further without re-introducing blur? Candidate: reduce `maxFastAccumulatedFrameNum` 4→2 to clear stale history faster after movement.
+1. **[Verified 2026-05-02]** Jitter removal is acceptable for now. `jitter_removed_on.png` keeps visible wall grain and tight puddle lights; no Halton jitter change yet.
+2. **[Verified 2026-05-02]** D-key 0.5s camera-motion probe did not show a denoiser-only long-lived ghost trail. The right-lamp teardrop shape also appears in `ghosting_raw_compare.png`, so it is not classified as REBLUR ghosting.
+3. Remaining indirect-lit dark-side noise is accepted for Phase 4 validation for now. The `maxFastAccumulatedFrameNum` 4→2 candidate was tested and rejected on 2026-05-02 because it did not visibly improve the result.
 4. Should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format?
 5. Does `CommonSettings.enableValidation=true` emit anything useful in the DX11-direct path (no NRI)? Currently: `OUT_VALIDATION` resource type returns null UAV in `ResolveUAV()` → silent no-op. Would need a dedicated texture + display path to use it.
+6. **[Documented]** P4-5 localized the denoised brightness bias to ToneMap/distribution interaction, not a simple NRD linear-radiance amplification. Denoised HDR composite mean is lower than raw, but ACES+gamma mean is higher.
+7. **[Policy fixed]** P4-6 decided not to add a hard-coded denoised exposure multiplier. It would be view-dependent and would break identical ToneMap A/B validation.
 
 ---
 
@@ -225,6 +265,15 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-02 | Codex       | P4-7 | Wrote final Phase 4 validation handoff summary in STATUS.md. Verdict: current F1 ON REBLUR path is accepted for the procedural city default view with documented limitations. Denoise strongly reduces raw speckle, no black-output regression was seen, jitter removal fixed watercolor blur, motion probe did not show denoiser-only long-lived ghosting, and brightness difference is documented as ToneMap/distribution behavior. No code changes; next action is review and commit the STATUS.md-only validation note.
+2026-05-02 | Codex       | P4-6 | Decided not to add a denoised-only ToneMap exposure multiplier for Phase 4. The ~0.877 scale was measured from one default camera and is view/scene dependent; applying it only to denoised output would hide the validation finding and break the identical Composite/ToneMap A/B contract. Policy: document the LDR exposure difference as a ToneMap/distribution effect; if exposure parity is required later, implement a real auto-exposure/calibration pass rather than a hard-coded denoised scalar. No code changes.
+2026-05-02 | Codex       | P4-5 | Temporarily instrumented F2 to dump pre-ToneMap `m_compositeTexture` stats, captured raw/denoised default-view stats, then removed the temporary code and rebuilt successfully. Artifacts: `build/p4_5_composite_stats_raw.txt`, `build/p4_5_composite_stats_denoised.txt`, `build/p4_5_raw_ldr.png`, `build/p4_5_denoised_ldr.png`. Raw HDR composite mean luma was 1.00606; denoised HDR composite mean luma was lower at 0.97407. Applying the same ACES+gamma curve to those HDR values produced mean luma 0.42381 raw vs 0.48320 denoised. Verdict: visible LDR brightness bias is from ToneMap's nonlinear response to the denoised HDR distribution, not from denoised linear HDR mean being brighter.
+2026-05-02 | Codex       | P4-4 | Captured F1 ON denoised timing set at ~2s, ~6s, and ~12s after enabling denoise: `build/p4_4_denoised_2s.png`, `build/p4_4_denoised_6s.png`, `build/p4_4_denoised_12s.png`; metrics in `build/p4_4_timing_metrics.json`. Debug ALL_BUILD passed; runtime stderr empty. Mean luma stayed high and stable vs avg64 ref 0.42389: 2s=0.48347, 6s=0.48340, 12s=0.48322. Exposure-matched metrics remain good (12s RMSE 0.10203 / PSNR 19.83 dB / SSIM-style 0.92902). Verdict: denoised brightness bias is stable, not warm-up; next step is to localize whether it appears before NRD, in NRD output, or in Composite/ToneMap.
+2026-05-02 | Codex       | P4-3 | Captured 64 default-view F1 OFF raw frames (`build/p4_3_raw_00.png` ... `build/p4_3_raw_63.png`), averaged them into `build/p4_3_raw_avg64_reference.png`, and wrote metrics to `build/p4_3_metrics.json`. Debug ALL_BUILD passed; runtime stderr empty. Against avg64, single raw was RMSE 0.12066 / MAE 0.06160 / PSNR 18.37 dB / SSIM-style 0.91413; denoised was RMSE 0.12484 / MAE 0.08320 / PSNR 18.07 dB / SSIM-style 0.92003. Exposure-matched comparison favored denoised: RMSE 0.10214 / PSNR 19.82 dB / SSIM-style 0.92879. Denoised mean luminance is higher (0.48350 vs ref 0.42388), so next check is whether this is warm-up timing or a stable brightness bias.
+2026-05-02 | Codex       | P4-2 | Captured 16 default-view F1 OFF raw frames (`build/p4_2_raw_00.png` ... `build/p4_2_raw_15.png`), averaged them into `build/p4_2_raw_avg16_reference.png`, and wrote metrics to `build/p4_2_metrics.json`. Debug ALL_BUILD passed; runtime stderr empty. Metrics vs avg16 reference were mixed: single raw RMSE 0.12637 / MAE 0.06502 / PSNR 17.97 dB / SSIM-style 0.90618; denoised RMSE 0.12751 / MAE 0.08543 / PSNR 17.89 dB / SSIM-style 0.91635. Visual denoise win remains clear, but objective closeness needs avg64 + exposure-matched metrics.
+2026-05-02 | Codex       | P4-1 | Captured accepted default-view A/B validation pair. Debug ALL_BUILD passed. Runtime from `build/` produced `build/p4_1_raw_default.png` (F1 OFF, settled frame 71) and `build/p4_1_denoised_default.png` (F1 ON, settled frame 77). stderr empty, NRD backend ready. Visual verdict: denoise strongly reduces raw speckle while preserving normal lighting/color; no black-output regression, no watercolor-level blur, and no denoiser-only ghost artifact in the static default view.
+2026-05-02 | Codex       | P3-6 | Ran controlled maxFastAccumulatedFrameNum 4→2 residual-noise sweep. Baseline `build/p3_6_fast4_baseline.png`; sweep `build/p3_6_fast2_sweep.png`; motion probe `build/p3_6_fast2_motion_immediate.png` / `build/p3_6_fast2_motion_settled.png`. Build and runtime passed with empty stderr, but the sweep did not visibly improve dark-side noise/stale history, so the one-line change was reverted and accepted setting remains maxFastAccumulatedFrameNum=4. Final Debug ALL_BUILD passed.
+2026-05-02 | Codex       | P3-5 | Verified jitter-removal effect and camera-motion ghosting probe. Debug ALL_BUILD passed. Automated F1 ON capture produced `build/jitter_removed_on.png`; D-key 0.5s produced `build/ghosting_immediate.png` and `build/ghosting_settled.png`; raw comparison `build/ghosting_raw_compare.png` showed the right-lamp teardrop shape is already present before denoise, so it is not a denoiser-only ghost trail. stderr empty; NRD backend ready; motion restarted accumulation.
 2026-05-02 | Claude Code | P3-5 | Remove per-frame sub-pixel jitter from GenerateCameraRay (ROOT CAUSE of watercolor blur). Jitter caused 24-frame temporal accumulation to average differently-positioned samples at every checker/edge boundary → gray blend = watercolor. REBLUR has no jitter compensation in motion vectors; jitter is only valid for traditional TAA. Commit c93e521.
 2026-05-02 | Claude Code | P3-5 | prepassBlurRadius 16/12→8/8 + planeDistanceSensitivity 0.025→0.08 + lobeAngleFraction/roughnessFraction 0.16→0.25. After A=30 fix, watercolor blur persisted from diffusePrepassBlurRadius=16 smearing raw input before temporal. Halved prepass radii; tightened edge-based rejection to preserve surface boundaries. Build passed. Commit dc8ce78.
 2026-05-02 | Claude Code | P3-5 | maxBlurRadius 18→12 (Step 2-3). Building walls/checker still watercolor-blurry. Commit 982f1d6.
