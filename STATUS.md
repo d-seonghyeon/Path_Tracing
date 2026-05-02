@@ -238,6 +238,13 @@ No critical conflicts found. Details:
 - `b0 (GlobalUB)` is never unbound after PathTracer. No behavioral impact today, but worth cleaning up before shipping.
 - The old `OnResize` partial-initialization risk was fixed locally in `src/context.cpp` by staging all screen textures before swapping them in.
 
+### Scene checker baseline (P5-1)
+
+- Scene checker now exposed on y=0 plane in sidewalk regions.
+  Sidewalk boxes removed from scene_desc.cpp. Tile size 2m × 2m,
+  albedo lerp(0.18, 0.72) for high-contrast detail preservation
+  testing under REBLUR spatial blur.
+
 ### Fixed decisions
 
 - Do not introduce NRI.
@@ -265,6 +272,13 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-02 | Claude Code | P5-1 | 선택지 B 적용: scene_desc.cpp의 sidewalk
+박스 2개 제거하고 Scene.hlsli의 y=0 체커 plane을 인도 영역에 노출.
+타일 크기 1m → 2m, 대비 (0.3, 0.9) → (0.18, 0.72)로 강화.
+원인: raw 사진에서 박스(z=0.02)가 plane(y=0) 바로 위에 떠 있어 시점별
+hit ordering이 달라지며 인도 영역에 두 톤 패턴 발생. 박스 제거로
+plane만 노출시켜 NRD 평면 디테일 보존 검증을 위한 baseline 확보.
+빌드 성공. 사용자 F1 OFF/ON 시각 검증 대기.
 2026-05-02 | Codex       | P4-7 | Wrote final Phase 4 validation handoff summary in STATUS.md. Verdict: current F1 ON REBLUR path is accepted for the procedural city default view with documented limitations. Denoise strongly reduces raw speckle, no black-output regression was seen, jitter removal fixed watercolor blur, motion probe did not show denoiser-only long-lived ghosting, and brightness difference is documented as ToneMap/distribution behavior. No code changes; next action is review and commit the STATUS.md-only validation note.
 2026-05-02 | Codex       | P4-6 | Decided not to add a denoised-only ToneMap exposure multiplier for Phase 4. The ~0.877 scale was measured from one default camera and is view/scene dependent; applying it only to denoised output would hide the validation finding and break the identical Composite/ToneMap A/B contract. Policy: document the LDR exposure difference as a ToneMap/distribution effect; if exposure parity is required later, implement a real auto-exposure/calibration pass rather than a hard-coded denoised scalar. No code changes.
 2026-05-02 | Codex       | P4-5 | Temporarily instrumented F2 to dump pre-ToneMap `m_compositeTexture` stats, captured raw/denoised default-view stats, then removed the temporary code and rebuilt successfully. Artifacts: `build/p4_5_composite_stats_raw.txt`, `build/p4_5_composite_stats_denoised.txt`, `build/p4_5_raw_ldr.png`, `build/p4_5_denoised_ldr.png`. Raw HDR composite mean luma was 1.00606; denoised HDR composite mean luma was lower at 0.97407. Applying the same ACES+gamma curve to those HDR values produced mean luma 0.42381 raw vs 0.48320 denoised. Verdict: visible LDR brightness bias is from ToneMap's nonlinear response to the denoised HDR distribution, not from denoised linear HDR mean being brighter.
