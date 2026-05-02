@@ -149,10 +149,12 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 1. **NRI 는 도입하지 않는다.** NRD 의 DXBC embed (`NRD_EMBEDS_DXBC_SHADERS=ON`, `NRD_USE_PRECOMPILED_SHADERS=ON`) 로 얻은 바이트코드를 `ID3D11Device::CreateComputeShader` 로 직접 생성해 파이프라인을 구성한다.
 2. **첫 디노이저**: `REBLUR_DIFFUSE_SPECULAR`. SIGMA (그림자) · ReLAX · REFERENCE 는 Phase 3 옵션.
 3. **누적 모델 폐기**: `g_accum += ...` 방식은 Phase 0 에서 **per-frame overwrite** 로 완전히 교체. ToneMap 의 `/(frameCount+1)` 도 동시에 제거.
-4. **Composite 는 별도 CS 패스**. Denoise 후 `diffuse * baseColor + specular + emissive` 를 합성한다.
+4. **Composite 는 별도 CS 패스**. Denoise 후 `diffuse + specular + emissive` 로 합성 (albedo 재곱 금지 — `SampleDirectLight` 가 이미 albedo 를 포함하므로 double-multiply 버그 발생).
 5. **리사이즈·카메라 텔레포트 시** NRD `AccumulationMode::CLEAR_AND_RESTART` 를 호출. `OnResize` 와 "카메라 점프 감지" 분기에 연결.
 6. **셰이더 리소스 수명**: NRD transient pool 은 매 프레임 재사용 가능 (해제 금지). permanent pool 은 리사이즈 시에만 재생성.
 7. **NRD 버전 고정**: `v4.14.3`. 버전업은 별도 PR 로만 한다.
+8. **hitDistanceParameters.A 와 HLSL REBLUR_HIT_DIST_PARAMS.x 는 항상 동일 값**이어야 한다. 현재 `30.0f`. 셰이더가 normHitDist 를 계산할 때, REBLUR 내부도 같은 A 로 역정규화하므로 불일치 시 blur radius 가 잘못 산출됨.
+9. **GenerateCameraRay 에 per-frame random jitter 를 추가하지 않는다**. REBLUR 는 motion vector 에 jitter offset 을 반영하지 않으므로, ±0.5px 랜덤 지터가 있으면 24-frame temporal accumulation 이 경계 픽셀을 blend 해 watercolor 버그를 일으킨다. 안티앨리어싱이 필요하면 Halton-2/3 시퀀스 + `CommonSettings.cameraJitter[]` 으로 구현한다.
 
 ---
 
@@ -166,6 +168,9 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 - 슬롯 맵을 **말 없이** 변경. 바뀔 땐 `STATUS.md §3` 먼저.
 - 한 번에 여러 Phase 를 한 커밋에 묶기. Phase 경계는 커밋 경계.
 - MCP/네트워크 의존성 추가. 현재 프로젝트는 완전 오프라인 빌드.
+- `Composite.hlsl` 에서 `diffuse * albedo` 형태의 재합성 도입. (`SampleDirectLight` 가 이미 BRDF albedo 를 포함 — double-multiply 로 어두운 소재가 10× 어두워짐. §7.4 참조)
+- `GenerateCameraRay` 에 per-frame random jitter 복원. (watercolor blur 재발 — §7.9 참조)
+- `hitDistanceParameters.A` 를 C++ 와 HLSL 중 한쪽만 변경. (normHitDist 불일치로 blur radius 오산 — §7.8 참조)
 
 ---
 

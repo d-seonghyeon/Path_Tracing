@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `99d1293` |
+| Hash | `32dae41` |
 | Author | choi mun chan |
 | Date | 2026-05-02 |
-| Scope | `P3` PathTracer — revert C2, restore lobe-weighted NEE split at bounce=0 |
-| Summary | C2 (all bounce=0 NEE to diffuse) reverted. matPuddle (roughness=0.02, pSpec≈1.0) requires specular-channel NEE for tight-blur treatment; routing to diffuse produced large soft blobs. Restored lobe-weighted split: diffuseContrib=neeContrib*pDiff, specularContrib=neeContrib*pSpec, hitT tracked per-channel. Horizontal smearing fix came from C5 (specularPrepassBlurRadius 28→12), not from NEE routing. |
+| Scope | `P3` STATUS.md — document jitter root cause fix |
+| Summary | Jitter removal (c93e521) confirmed as root cause of watercolor blur. Per-frame ±0.5px sub-pixel jitter in GenerateCameraRay caused 24-frame temporal accumulation to blend checker/edge pixels across tile boundaries. Removed jitter; REBLUR now accumulates consistent pixel positions. |
 
 ---
 
@@ -68,22 +68,34 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[P3-5 quality-fix round] hitDistanceParameters.A 3→30 + maxStabilizedFrameNum 0→30.
+[P3-5] Verify jitter removal effect, then run camera-motion ghosting probe.
 
-Scene AABB ~50x60x27m (diagonal 83m). With A=3.0 (NRD indoor default),
-normalization=(3+viewZ*0.1) at viewZ=10m was ~4, saturating any secondary hit
->4m to normHitDist=1.0 ("far/uncertain"). REBLUR applied max spatial blur to
-essentially the entire street scene. Fixed: A=30 raises normalization to ~31 at
-viewZ=10m, giving 5-25m secondary hits a proper [0,1] range. Also updated
-HLSL REBLUR_HIT_DIST_PARAMS.x=30 to stay bit-identical with C++ side.
+All P3-5 quality fixes are committed (see §3 "Current REBLUR settings").
+The final fix (c93e521) removed per-frame sub-pixel jitter from
+GenerateCameraRay — this was the root cause of watercolor blur.
 
-maxStabilizedFrameNum restored to 30 (was 0 = disabled). Re-enables temporal
-stabilization pass, which reduces residual flicker on static camera and lowers
-spatial blur dependency.
+Step A — Visual verification (required before anything else):
+  1. cmake --build build --config Debug --target ALL_BUILD -j 16
+  2. Run from build/: .\Debug\PT_Object_Loading.exe
+  3. Let settle ~3 sec (temporal history converges), F1 ON, F2 capture.
+  4. Inspect capture_N_denoised.png:
+     - Checker tiles: should show sharp edges (not blended gray)
+     - Building walls: should show visible surface grain, not flat
+     - Puddle reflections: should remain as tight point lights
+  5. Save capture as a baseline named "jitter_removed_on.png".
 
-Commits: 9352bdf (A 3→30), afebcca (stabilized 0→30)
+Step B — Camera-motion ghosting probe:
+  Hold D key 0.5 sec, stop, F2 capture immediately → "ghosting_immediate.png"
+  Wait 4 sec, F2 capture → "ghosting_settled.png"
+  Inspect for long-lived ghost trails. Acceptable = trail gone within 2 sec.
 
-Next: F2 capture F1 OFF/ON — checker/edge sharpness should dramatically improve. If geometric aliasing (jagged edges) is too severe, introduce Halton-sequence jitter + pass jitter to CommonSettings instead of random jitter.
+Step C — Decision tree:
+  - If aliasing too harsh on geometry edges: implement Halton-2/3 jitter in
+    GenerateCameraRay and feed offset into NRD CommonSettings.cameraJitter
+    (see NRD.hlsli CommonSettings struct). Keep jitter amplitude ≤ 0.5px.
+  - If ghosting too severe: reduce maxAccumulatedFrameNum 24→16 and
+    tighten antilag: luminanceSigmaScale 3.5→2.5, sensitivity 2.5→3.0.
+  - If still over-blurry: reduce diffusePrepassBlurRadius 8→4.
 ```
 
 ---
@@ -116,23 +128,61 @@ Next: F2 capture F1 OFF/ON — checker/edge sharpness should dramatically improv
 - `Dependency.cmake` uses the NRD source-local SDK layout (`Include`, `Integration`, `Shaders/Include`, `_Bin/Debug`).
 - ShaderMake CLI mismatch is fixed: `NVIDIA-RTX/ShaderMake` (main) dropped `--useAPI` and uses `SHADERMAKE_FXC_PATH` instead of `FXC_PATH`. Both issues are patched in `build/dep_nrd-prefix/src/dep_nrd/CMakeLists.txt` and via `cmake/patch_nrd.cmake`.
 - `F1` only activates the denoise path when a usable backend actually exists; otherwise rendering stays on the raw G-buffer path and logs the stub status.
-- `nrd_denoiser.cpp` now sets `ReblurSettings.hitDistanceParameters` explicitly to match shader-side packing constants (`A=3, B=0.1, C=20, D=-25`).
-- Codex audited the black-output suspects on 2026-04-18: NRD v4.14.3 docs/source confirmed that column-major `CommonSettings` upload is correct, REBLUR does expect pre-packed YCoCg radiance, and `motionVectorScale = 1 / screenSize` is correct for 2D screen-space MVs. The one concrete integration bug found was elsewhere: REBLUR temporal stabilization writes `IN_MV` as a UAV, and the DX11 wrapper now binds `m_motionVectorUAV` for that path. Debug build passed after the patch, but a local PowerShell `Start-Process` `Path`/`PATH` collision blocked the short runtime smoke test.
-- First quality-tuning pass in `nrd_denoiser.cpp` biases REBLUR toward faster history rejection: `antilagSettings = { sigmaScale=3.0, sensitivity=2.0 }`, `maxAccumulatedFrameNum = 24`, `maxFastAccumulatedFrameNum = 4`, `diffuse/specularPrepassBlurRadius = 20/35`.
-- Runtime checks completed on 2026-04-18: Debug build passed, app stayed alive, `REBLUR_DIFFUSE_SPECULAR ready` logged, and `F1` still logged `Denoise OFF` / `Denoise ON` after the Phase 3 packing change.
-- Manual quality comparison completed on 2026-04-18: after camera movement, `F1=ON` produced a much cleaner image while `F1=OFF` remained heavily speckled on dark building faces. The current denoiser path is active and materially affecting output.
-- Resize validation repeated on 2026-04-18 with the staged-allocation `Context::OnResize()` path: Debug build passed, the app survived two live window resizes, and stdout logged `Window Resized: 1088x642` then `Window Resized: 828x422` without crashing or leaving the render path unusable.
-- Anti-lag tuning smoke test completed on 2026-04-18: Debug build passed after the new REBLUR settings, the app stayed alive for 6 seconds, and startup again logged `REBLUR_DIFFUSE_SPECULAR ready` with no stderr output.
-- Manual camera-motion probe completed on 2026-04-18 with `quality_tuned_denoise_on/off.png` plus `ghosting_probe_immediate/settled.png`: the new settings did not show an obvious long-lived ghost trail in the tested move, but dark regions still collapsed too aggressively, so the next pass should focus on restoring detail rather than pushing anti-lag harder.
-- Second REBLUR sweep completed on 2026-04-18 with a partial rollback toward defaults (`antilag` 3.5/2.5, history 28/5, prepass blur 24/42). The build and runtime capture path both succeeded, but `quality_retuned_denoise_on.png` still did not recover dark-scene detail enough to call the issue solved.
-- Third REBLUR sweep completed on 2026-04-18 with looser spatial rejection (`minHitDistanceWeight = 0.18`, `lobeAngleFraction = 0.20`, `roughnessFraction = 0.20`, `planeDistanceSensitivity = 0.03`) while keeping the moderated anti-lag/history values. Build and capture succeeded, but `quality_third_sweep_on.png` still looked materially similar to the second sweep, which suggests the remaining dark-scene collapse may not be fixable by parameter tuning alone.
-- Input audit on 2026-04-18 found a real REBLUR semantic mismatch: `PathTracer.hlsl` had been feeding the primary camera-hit distance into `IN_DIFF_RADIANCE_HITDIST` / `IN_SPEC_RADIANCE_HITDIST`, even though NRD's own `NRD.hlsli` explicitly says primary hit distance must be ignored. A first fix now feeds secondary-path hit distance estimates instead, which improved the fully-collapsed static image somewhat, but the denoised image still spends time near-black before settling.
-- A targeted startup-response tuning pass on 2026-04-18 (`maxStabilizedFrameNum = 0`, `historyFixBasePixelStride = 8`) did not materially improve the early near-black warm-up compared with the post-hit-distance-fix baseline.
-- A follow-up NEE audit on 2026-04-18 found that primary and indirect direct-light contributions were still carrying little or no representative hit distance. Local shader edits now pass `lightHitDist` out of `SampleDirectLight(...)` and choose a luminance-weighted representative hit distance for the diffuse/specular channels, which produced a visibly brighter settled static frame than the previous primary-hit-distance-only fix.
-- Root cause of persistent dark collapse identified on 2026-04-18: `SampleDirectLight` returns `(kD * albedo/PI + specular) * emission * NdotL / pdf`, so `result.diffuse` already contains albedo from the Lambertian BRDF. The old Composite formula `diffuse * albedo + specular + emissive` was double-multiplying albedo, making dark materials (albedo ~0.1) appear ~10x too dark. Fixed by changing Composite to `diffuse + specular + emissive` and removing the incorrect `diffuse / primaryAlbedo` demodulation from PathTracer.
-- P3-4 black-output debug is closed as of 2026-05-01. The root cause was missing SRV resolution for REBLUR internal `OUT_DIFF_RADIANCE_HITDIST` / `OUT_SPEC_RADIANCE_HITDIST` read-after-write passes; F1 ON now produces a visible normal-color denoised image.
-- B11 detail-retention sweep reduced REBLUR blur/history settings (`diffuse/specularPrepassBlurRadius=16/28`, `maxBlurRadius=18`, `maxAccumulatedFrameNum=24`, `maxFastAccumulatedFrameNum=4`). Static capture looks slightly less smeared than B10.
-- B12 automated D-key camera-motion probe did not show an obvious long-lived ghost trail between the immediate and settled denoised captures. The sweep is a reasonable keep candidate, pending user visual review.
+- `F1=ON` path: `PT → REBLUR_DIFFUSE_SPECULAR → Composite(YCoCg decode) → ToneMap`. `F1=OFF` path: raw PT output straight to Composite.
+- `F2` saves `capture_N_<denoised|raw>.png` to the CWD of the exe (= `build/`).
+- YCoCg packing: `PathTracer.hlsl` packs radiance via `NrdLinearToYCoCg` (= `_NRD_LinearToYCoCg` in NRD.hlsli, confirmed bit-identical). `Composite.hlsl` decodes via `NrdYCoCgToLinear`. REBLUR's internal textures store YCoCg and its back-end unpack does the inverse. Round-trip is correct.
+- `nrd_denoiser.cpp` frame-0/1 log: outputs `NRD SetCommonSettings` with viewZScale/denoisingRange/mvScale for sanity check.
+- P3-4 black-output is closed (2026-05-01). Root cause was missing SRV for `OUT_DIFF/OUT_SPEC_RADIANCE_HITDIST` in temporal accumulation pass.
+- Resize validated: `Context::OnResize()` uses staged allocation; app survived two live resizes.
+
+### Current REBLUR settings (src/nrd_denoiser.cpp as of 2026-05-02)
+
+```cpp
+// hitT normalization — must stay in sync with HLSL REBLUR_HIT_DIST_PARAMS
+// Scene AABB ~50x60x27m (diagonal 83m). A=30 matches city-scale ray lengths.
+// normalization = (A + |viewZ|*B) * lerp(1, C, exp2(D*roughness^2))
+// At viewZ=10m, diffuse: normalization=31 → 5m hit gives normHitDist=0.16 ✓
+reblurSettings.hitDistanceParameters = { A=30.0f, B=0.1f, C=20.0f, D=-25.0f };
+// ↑ HLSL mirror: shader/PathTracer.hlsl REBLUR_HIT_DIST_PARAMS = float4(30,0.1,20,-25)
+// ↑ Both values MUST stay bit-identical — changing one without the other breaks normHitDist.
+
+reblurSettings.antilagSettings.luminanceSigmaScale  = 3.5f;
+reblurSettings.antilagSettings.luminanceSensitivity = 2.5f;
+reblurSettings.maxAccumulatedFrameNum               = 24;
+reblurSettings.maxFastAccumulatedFrameNum           = 4;
+reblurSettings.maxStabilizedFrameNum                = 30;   // 0 = disabled (was wrong)
+reblurSettings.historyFixBasePixelStride            = 8;
+reblurSettings.diffusePrepassBlurRadius             = 8.0f; // halved from 16 on 2026-05-02
+reblurSettings.specularPrepassBlurRadius            = 8.0f; // C5 fix: was 28→12, now 8
+reblurSettings.minBlurRadius                        = 0.5f;
+reblurSettings.maxBlurRadius                        = 12.0f; // was 18
+reblurSettings.minHitDistanceWeight                 = 0.10f;
+reblurSettings.lobeAngleFraction                    = 0.25f;
+reblurSettings.roughnessFraction                    = 0.25f;
+reblurSettings.planeDistanceSensitivity             = 0.08f; // raised for sharper edge rejection
+```
+
+### PathTracer.hlsl key decisions (as of 2026-05-02)
+
+- **No sub-pixel jitter**: `GenerateCameraRay` uses `pixelCoord + 0.5` (center), no per-frame random offset.
+  - Removed because REBLUR has no `cameraJitter` compensation field in our NRD v4.14.3 path.
+  - Per-frame jitter + 24-frame temporal accumulation blended checker/edge pixels → watercolor blur.
+  - If geometric AA is unacceptable: switch to Halton-2/3 jitter (≤0.5px) and feed offset into `CommonSettings.cameraJitter[]`.
+- **SAMPLES_PER_PIXEL = 1**: one MC sample per pixel per frame. REBLUR temporal accumulation provides effective multi-sample averaging.
+- **Diffuse hitT**: luminance-weighted representative of bounce=0 NEE `lightHitDist` (first secondary hit distance, not primary camera hit, not accumulated path length).
+- **Bounce=0 NEE split**: `diffuseContrib = neeContrib * lobe.pDiff`, `specularContrib = neeContrib * lobe.pSpec`. Do NOT route all NEE to diffuse (breaks matPuddle roughness=0.02 tight-reflection).
+- **No bounce=0 emitter in diffuse channel**: direct emitter hit stored in `result.emissive` only → Composite adds it. Adding to diffuse caused anti-lag collapse.
+
+### Closed debug campaigns
+
+- **P3-4 (black output)**: closed 2026-05-01. Root cause: missing `OUT_DIFF/OUT_SPEC` SRV in temporal accumulation. See §7.
+- **P3-5 watercolor blur root cause chain** (all closed 2026-05-02):
+  - C1: sampler OOB (array size 2→4)
+  - C4: diffuse hitT accumulated path length → first secondary hit
+  - C5: specularPrepassBlurRadius 28→12→8
+  - H1: hitDistanceParameters.A 3→30 (scene scale mismatch)
+  - H2: maxStabilizedFrameNum 0→30 (temporal stabilization re-enabled)
+  - **ROOT CAUSE**: per-frame sub-pixel jitter in GenerateCameraRay (removed in c93e521)
 
 ### F2 Screenshot Capture (Phase 4 FLIP/SSIM)
 
@@ -162,10 +212,11 @@ No critical conflicts found. Details:
 
 ## 4. Open Questions
 
-1. Does the B11 lower-blur sweep introduce ghost trails or unacceptable noise during camera motion?
-2. Can the remaining side-wall dark smearing be improved with REBLUR parameters alone, or does it require another G-buffer / hit-distance semantic audit?
-3. Should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format later?
-4. Does the NRD validation layer (`CommonSettings.enableValidation`) emit anything useful in the DX11-direct path (no NRI), or would validation need a custom hook?
+1. **[Must verify]** Does jitter removal produce acceptable geometric edge quality, or is Halton jitter + `CommonSettings.cameraJitter` needed?
+2. **[Must verify]** Do the new REBLUR settings (prepass=8/8, maxBlur=12, A=30) produce ghost trails on camera movement? Probe: D-key 0.5s → immediate capture → 4s settle → settled capture.
+3. Can the remaining noise on indirect-lit surfaces (dark building sides) be reduced further without re-introducing blur? Candidate: reduce `maxFastAccumulatedFrameNum` 4→2 to clear stale history faster after movement.
+4. Should `normalRoughness` stay as `R16G16B16A16_FLOAT`, or be tightened to a more storage-efficient format?
+5. Does `CommonSettings.enableValidation=true` emit anything useful in the DX11-direct path (no NRI)? Currently: `OUT_VALIDATION` resource type returns null UAV in `ResolveUAV()` → silent no-op. Would need a dedicated texture + display path to use it.
 
 ---
 
