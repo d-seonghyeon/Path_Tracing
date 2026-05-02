@@ -68,16 +68,19 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[P3-5 quality-fix round] C1-C5 committed (commits 8450ef1..4ca5441).
+[P3-5 quality-fix round] C2 reverted (NEE back to lobe-weighted split).
 
-Applied fixes:
-- C1: sampler array out-of-bounds UB fixed (m_samplers[4], correct enum mapping)
-- C2: bounce=0 NEE moved entirely to diffuse channel
-- C4: diffuse hitT changed from accumulated path length to first secondary hit
-- C5: specularPrepassBlurRadius 28→12
+C1/C4/C5 remain. C2 was wrong: routing all bounce=0 NEE to diffuse caused
+matPuddle (roughness=0.02, lobe.pSpec≈1.0) lamp reflections to land in the
+max-blur diffuse channel, producing large soft blobs instead of tight
+specular point reflections. Reverted to lobe-weighted split:
+  diffuseContrib  = neeContrib * lobe.pDiff → diffuse channel
+  specularContrib = neeContrib * lobe.pSpec → specular channel
 
-Debug ALL_BUILD passed. Awaiting runtime visual comparison (F2 capture F1 OFF/ON)
-to judge whether specular smearing and detail loss have improved.
+Horizontal smearing fix came from C5 (specularPrepassBlurRadius 28→12), not C2.
+
+Next: runtime F2 capture (F1 OFF / F1 ON) to confirm puddle reflections
+are now sharp point-like rather than soft blobs.
 ```
 
 ---
@@ -168,6 +171,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-02 | Claude Code | P3-5 | Reverted C2 (bounce=0 NEE lobe-weighted split restored). C2 was wrong: all-to-diffuse routing made matPuddle (roughness=0.02, pSpec≈1.0) lamp reflections land in max-blur diffuse channel → large soft blobs. Reverted to diffuseContrib=neeContrib*pDiff / specularContrib=neeContrib*pSpec. The original horizontal-smearing fix was C5 (specularPrepassBlurRadius 28→12), not C2.
 2026-05-01 | Claude Code | P3-5 | Quality-fix round C1–C5 committed (8450ef1..4ca5441). (C1) sampler array extended to 4 entries — NEAREST_CLAMP/NEAREST_MIRROR/LINEAR_CLAMP/LINEAR_MIRROR indexed by nrd::Sampler enum value, fixing out-of-bounds UB that corrupted REBLUR blur-pass filtering. (C2) bounce=0 NEE moved entirely to diffuse channel, removing REBLUR specular temporal-lobe mismatch that caused horizontal smearing. (C4) diffuse hitT changed from accumulated multi-bounce path length to first-secondary-hit distance only, symmetric with specular. (C5) specularPrepassBlurRadius 28→12 now that specular channel is clean. Debug ALL_BUILD passed. Runtime visual comparison needed: F2 capture F1 OFF/ON to judge remaining smearing and detail.
 2026-05-01 | Codex       | Docs | Removed obsolete root markdown notes that were no longer needed for future work: `REFACTORING.md`, `SCENE_REFACTOR.md`, and `SCENE_GUIDE.md`. Kept `STATUS.md`, `AGENTS.md`, `CLAUDE.md`, `NRD_INTEGRATION_PLAN.md`, and `CHANGELOG_2026-04-07.md` because they are still used for cross-session state, agent rules, NRD roadmap, or build/runtime history.
 2026-05-01 | Codex       | P3-5 | B12 automated camera-motion probe completed for the B11 lower-blur sweep. Started with F1 ON, held D briefly, captured `capture_0_denoised.png` immediately after movement and `capture_1_denoised.png` after roughly 4 seconds of settling. The app stayed alive, stdout showed normal NRD settings logs, stderr was empty, and the viewed captures did not show an obvious long-lived ghost trail. Verdict: B11 sweep is a keep candidate, pending user visual review before commit.
