@@ -175,10 +175,10 @@ if (bounce == 0) {
 
 ## 6. 현재 적용 중인 REBLUR 설정
 
-> 마지막 갱신: 2026-05-02 (P3-5 완료 후)
+> 마지막 갱신: 2026-05-02 (P5-2 blur-radius sweep 완료 후)
 
 ```cpp
-// src/nrd_denoiser.cpp — 2026-05-02 기준 최종 상태
+// src/nrd_denoiser.cpp — 2026-05-02 P5-2 기준 최종 상태
 // HLSL 미러: shader/PathTracer.hlsl REBLUR_HIT_DIST_PARAMS = float4(30,0.1,20,-25)
 // A 값을 변경할 경우 반드시 C++·HLSL 양쪽 동시 수정 (bit-identical 유지 필수)
 reblurSettings.hitDistanceParameters.A  = 30.0f;  // 3→30: 씬 스케일 83m 대응
@@ -191,15 +191,25 @@ reblurSettings.maxAccumulatedFrameNum                = 24;
 reblurSettings.maxFastAccumulatedFrameNum            = 4;
 reblurSettings.maxStabilizedFrameNum                 = 30;   // 0→30: temporal stabilization 재활성화
 reblurSettings.historyFixBasePixelStride             = 8;
-reblurSettings.diffusePrepassBlurRadius              = 8.0f; // 16→8
-reblurSettings.specularPrepassBlurRadius             = 8.0f; // 28→12→8 (C5)
+reblurSettings.diffusePrepassBlurRadius              = 6.0f; // 8→6 (P5-2 sweep 채택)
+reblurSettings.specularPrepassBlurRadius             = 6.0f; // 8→6 (P5-2 sweep 채택)
 reblurSettings.minBlurRadius                         = 0.5f;
-reblurSettings.maxBlurRadius                         = 12.0f; // 18→12
+reblurSettings.maxBlurRadius                         = 9.0f; // 12→9 (P5-2 sweep 채택)
 reblurSettings.minHitDistanceWeight                  = 0.10f;
 reblurSettings.lobeAngleFraction                     = 0.25f;
 reblurSettings.roughnessFraction                     = 0.25f;
 reblurSettings.planeDistanceSensitivity              = 0.08f;
 ```
+
+#### P5-2 blur-radius sweep 결과 요약
+
+| prepass | maxBlur | 근거리 체커 (~5m) | 벽 노이즈 | 판정 |
+|---------|---------|-------------------|-----------|------|
+| 8       | 12      | 소실              | 깨끗      | 기각 |
+| 4       | 6       | 명확 보존         | grain 잔존 | 과소 |
+| **6**   | **9**   | **보존** ✓        | **깨끗** ✓ | **채택** |
+
+2m × 2m 체커 보존 임계: **prepass ≤ 6 / maxBlur ≤ 9**.
 
 ---
 
@@ -248,10 +258,11 @@ motion vector에 jitter offset이 반영되지 않아 보상이 없음.
 
 ## 8. 남은 과제
 
-| # | 항목 | 우선순위 |
-|---|------|---------|
-| R1 | **[필수]** 지터 제거 후 F2 캡처로 체커/벽면 선명도 확인 | 필수 |
-| R2 | **[필수]** 카메라 이동 고스팅 프로브 (D키 0.5s → 즉시/4s 캡처 비교) | 필수 |
-| R3 | 기하학 에지 aliasing 허용 수준 판단 → 필요시 Halton jitter + `CommonSettings.cameraJitter` 도입 | 조건부 |
-| R4 | 어두운 건물 측면 노이즈 추가 감소 가능 여부 — `maxFastAccumulatedFrameNum` 4→2 시도 | 선택 |
-| R5 | Phase 4: F1=OFF / F1=ON FLIP/SSIM 정량 비교 | 선택 |
+| # | 항목 | 우선순위 | 상태 |
+|---|------|---------|------|
+| R1 | 지터 제거 후 F2 캡처로 체커/벽면 선명도 확인 | 필수 | ✅ 완료 (P3-5, P5-1) |
+| R2 | 카메라 이동 고스팅 프로브 (D키 0.5s → 즉시/4s 캡처 비교) | 필수 | ✅ 완료 (P3-5, P4) |
+| R3 | 기하학 에지 aliasing 허용 수준 판단 → Halton jitter + `CommonSettings.cameraJitter` | 조건부 | 미착수 |
+| R4 | 어두운 건물 측면 노이즈 — `maxFastAccumulatedFrameNum` 4→2 | 선택 | ✅ 시도 후 기각 (P3-6) |
+| R5 | F1=OFF / F1=ON FLIP/SSIM 정량 비교 | 선택 | ✅ 완료 (P4-2~P4-5) |
+| R6 | 씬 체커 baseline 확보 및 blur-radius sweep | 필수 | ✅ 완료 (P5-1, P5-2) |

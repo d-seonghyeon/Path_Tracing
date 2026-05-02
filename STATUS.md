@@ -68,20 +68,18 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[Handoff] Review and commit the documentation-only validation update.
+[P5 Complete] Checker baseline + blur-radius sweep done.
 
-Phase 4 validation is complete enough for handoff:
-  - Debug ALL_BUILD passed after temporary P4-5 instrumentation was removed.
-  - Default-view A/B captures show denoise strongly reduces raw speckle.
-  - Camera-motion probe found no denoiser-only long-lived ghost trail.
-  - Objective metrics favor denoised structurally and after exposure matching.
-  - LDR brightness difference is documented as a ToneMap/distribution effect,
-    not a linear HDR radiance amplification bug.
+P5 결과 요약:
+  - sidewalk 박스 제거 → y=0 체커 plane 노출 (P5-1)
+  - 2m 타일 크기, 대비 (0.18, 0.72) 적용 (P5-1)
+  - blur-radius sweep: prepass 8→6, maxBlur 12→9 채택 (P5-2)
+  - 근거리 2m 체커 보존 확인, 건물 벽 노이즈 허용 수준
 
-Next single action:
-  1. Review the STATUS.md-only diff.
-  2. If acceptable, commit it as a Phase 4 validation handoff note.
-  3. Recommended commit scope: `P4: document NRD validation results`.
+남은 선택지:
+  A. 기하학 에지 aliasing 판단 → Halton jitter + cameraJitter[] 도입 여부
+  B. S3 Fireflies 잔존 추가 감소 (antilag 파라미터 재조정)
+  C. 현 상태 Phase 5 완료로 문서화 후 다음 Phase 기획
 ```
 
 ---
