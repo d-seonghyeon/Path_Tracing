@@ -55,11 +55,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `4ca5441` |
+| Hash | `99d1293` |
 | Author | choi mun chan |
-| Date | 2026-05-01 |
-| Scope | `P3` REBLUR quality fix — sampler UB + NEE channel + hitT + prepass blur |
-| Summary | Four quality fixes applied: (C1) sampler array extended to 4 entries so LINEAR_CLAMP enum=2 maps correctly instead of out-of-bounds UB; (C2) bounce=0 NEE moved entirely to diffuse channel to prevent REBLUR specular lobe mismatch; (C4) diffuse hitT switched from accumulated path length to first-secondary-hit distance only; (C5) specularPrepassBlurRadius reduced 28→12 now that specular channel is clean. Debug build clean. |
+| Date | 2026-05-02 |
+| Scope | `P3` PathTracer — revert C2, restore lobe-weighted NEE split at bounce=0 |
+| Summary | C2 (all bounce=0 NEE to diffuse) reverted. matPuddle (roughness=0.02, pSpec≈1.0) requires specular-channel NEE for tight-blur treatment; routing to diffuse produced large soft blobs. Restored lobe-weighted split: diffuseContrib=neeContrib*pDiff, specularContrib=neeContrib*pSpec, hitT tracked per-channel. Horizontal smearing fix came from C5 (specularPrepassBlurRadius 28→12), not from NEE routing. |
 
 ---
 
