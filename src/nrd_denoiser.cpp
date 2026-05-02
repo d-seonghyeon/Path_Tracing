@@ -357,14 +357,14 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         reblurSettings.maxFastAccumulatedFrameNum            = 4;
         reblurSettings.maxStabilizedFrameNum                 = 30;
         reblurSettings.historyFixBasePixelStride             = 8;
-        reblurSettings.diffusePrepassBlurRadius              = 16.0f;
-        reblurSettings.specularPrepassBlurRadius             = 12.0f;
-        reblurSettings.minBlurRadius                         = 0.75f;
+        reblurSettings.diffusePrepassBlurRadius              = 8.0f;
+        reblurSettings.specularPrepassBlurRadius             = 8.0f;
+        reblurSettings.minBlurRadius                         = 0.5f;
         reblurSettings.maxBlurRadius                         = 12.0f;
-        reblurSettings.minHitDistanceWeight                  = 0.12f;
-        reblurSettings.lobeAngleFraction                     = 0.16f;
-        reblurSettings.roughnessFraction                     = 0.16f;
-        reblurSettings.planeDistanceSensitivity              = 0.025f;
+        reblurSettings.minHitDistanceWeight                  = 0.10f;
+        reblurSettings.lobeAngleFraction                     = 0.25f;
+        reblurSettings.roughnessFraction                     = 0.25f;
+        reblurSettings.planeDistanceSensitivity              = 0.08f;
         nrd::Result dsResult = nrd::SetDenoiserSettings(*m_nrdInstance, REBLUR_ID, &reblurSettings);
         if (dsResult != nrd::Result::SUCCESS)
             SPDLOG_ERROR("NrdDenoiser::Denoise: SetDenoiserSettings failed ({})", (uint32_t)dsResult);
