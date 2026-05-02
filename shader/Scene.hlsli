@@ -182,7 +182,12 @@ bool SceneIntersect(Ray ray, out SurfaceHit hit) {
     float tClosest = 1e30f;
     bool  hitAny   = false;
 
-    // 바닥 평면 (y = 0)
+    // 바닥 평면 (y = 0) — 체커 패턴
+    // 선택지 B 적용:
+    //   타일 크기를 1m → 2m로 키움. 1m는 화면에서 너무 작아 NRD가
+    //   spatial blur로 너무 쉽게 지움. 2m면 평면 위 고주파 디테일이
+    //   denoised에서 살아남는지 검증 가능.
+    //   대비도 키움: (0.3, 0.9) → (0.18, 0.72).
     float3 planeN = float3(0, 1, 0);
     float  denom  = dot(ray.direction, planeN);
     if (abs(denom) > 0.0001f) {
@@ -194,9 +199,9 @@ bool SceneIntersect(Ray ray, out SurfaceHit hit) {
             hit.p                  = ray.origin + tPlane * ray.direction;
             hit.normal             = planeN;
             hit.frontFace          = true;
-            float2 uv              = hit.p.xz;
+            float2 uv              = hit.p.xz * 0.5f;
             float checker          = (fmod(abs(floor(uv.x) + floor(uv.y)), 2.0f) < 1.0f) ? 1.0f : 0.0f;
-            hit.material.albedo    = lerp(float3(0.3f,0.3f,0.3f), float3(0.9f,0.9f,0.9f), checker);
+            hit.material.albedo    = lerp(float3(0.18f, 0.18f, 0.18f), float3(0.72f, 0.72f, 0.72f), checker);
             hit.material.roughness = 0.8f;
             hit.material.metallic  = 0.0f;
             hit.material.emissive  = float3(0, 0, 0);
