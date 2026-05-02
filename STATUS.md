@@ -138,15 +138,27 @@ reblurSettings.maxAccumulatedFrameNum               = 24;
 reblurSettings.maxFastAccumulatedFrameNum           = 4;
 reblurSettings.maxStabilizedFrameNum                = 30;   // 0 = disabled (was wrong)
 reblurSettings.historyFixBasePixelStride            = 8;
-reblurSettings.diffusePrepassBlurRadius             = 8.0f; // halved from 16 on 2026-05-02
-reblurSettings.specularPrepassBlurRadius            = 8.0f; // C5 fix: was 28→12, now 8
+reblurSettings.diffusePrepassBlurRadius             = 6.0f; // P5 sweep: 8→6 (checker preservation)
+reblurSettings.specularPrepassBlurRadius            = 6.0f; // P5 sweep: 8→6
 reblurSettings.minBlurRadius                        = 0.5f;
-reblurSettings.maxBlurRadius                        = 12.0f; // was 18
+reblurSettings.maxBlurRadius                        = 9.0f; // P5 sweep: 12→9 (sweet spot)
 reblurSettings.minHitDistanceWeight                 = 0.10f;
 reblurSettings.lobeAngleFraction                    = 0.25f;
 reblurSettings.roughnessFraction                    = 0.25f;
 reblurSettings.planeDistanceSensitivity             = 0.08f; // raised for sharper edge rejection
 ```
+
+#### P5 blur-radius sweep summary (2026-05-02)
+
+| prepass | maxBlur | 근거리 체커 | 벽 노이즈 | 판정 |
+| ------- | ------- | ----------- | --------- | ---- |
+| 8       | 12      | 소실        | 깨끗      | 기각 |
+| 4       | 6       | 명확 보존   | grain 잔존 | 과소 |
+| **6**   | **9**   | **보존** ✓  | **깨끗** ✓ | **채택** |
+
+2m × 2m 체커가 근거리에서 살아남는 최소 설정은 prepass≤6 / max≤9.
+prepass=4/max=6도 체커 보존은 더 강하지만 벽면 grain이 NRD 정상 작동 여부를
+모호하게 만들어 기각. prepass=6/max=9가 진단 신뢰도 측면에서 최적.
 
 ### PathTracer.hlsl key decisions (as of 2026-05-02)
 
@@ -272,6 +284,10 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-02 | Claude Code | P5-2 | REBLUR blur-radius sweep: prepass 8/max 12 → 4/6 → 6/9.
+prepass=8/max=12에서 2m 체커 완전 소실 확인. prepass=4/max=6에서 체커 보존
+성공했으나 벽면 grain 잔존. prepass=6/max=9이 체커 보존 + 벽 노이즈 제거
+모두 충족하는 스윗스팟으로 채택. 빌드 성공. 커밋 aea86f5.
 2026-05-02 | Claude Code | P5-1 | 선택지 B 적용: scene_desc.cpp의 sidewalk
 박스 2개 제거하고 Scene.hlsli의 y=0 체커 plane을 인도 영역에 노출.
 타일 크기 1m → 2m, 대비 (0.3, 0.9) → (0.18, 0.72)로 강화.
