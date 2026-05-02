@@ -345,7 +345,7 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
 
         // --- DenoiserSettings (REBLUR 疫꿸퀡??첎????? ---
         nrd::ReblurSettings reblurSettings = {};
-        reblurSettings.hitDistanceParameters.A = 3.0f;
+        reblurSettings.hitDistanceParameters.A = 30.0f;
         reblurSettings.hitDistanceParameters.B = 0.1f;
         reblurSettings.hitDistanceParameters.C = 20.0f;
         reblurSettings.hitDistanceParameters.D = -25.0f;

@@ -39,7 +39,7 @@ RWTexture2D<float4>       g_emissive           : register(u6); // .rgb=emissive
 
 static const int   MAX_BOUNCES       = 6;
 static const int   SAMPLES_PER_PIXEL = 1;
-static const float4 REBLUR_HIT_DIST_PARAMS = float4(3.0f, 0.1f, 20.0f, -25.0f);
+static const float4 REBLUR_HIT_DIST_PARAMS = float4(30.0f, 0.1f, 20.0f, -25.0f);
 static const float NRD_HIT_T_MAX     = 1e16f; // 하늘/미스 센티널
 
 // -------------------------------------------------------
