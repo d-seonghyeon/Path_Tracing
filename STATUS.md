@@ -83,7 +83,7 @@ spatial blur dependency.
 
 Commits: 9352bdf (A 3→30), afebcca (stabilized 0→30)
 
-Next: F2 capture F1 OFF/ON. If noise returns, retreat prepassBlurRadius to 10/10.
+Next: F2 capture F1 OFF/ON — checker/edge sharpness should dramatically improve. If geometric aliasing (jagged edges) is too severe, introduce Halton-sequence jitter + pass jitter to CommonSettings instead of random jitter.
 ```
 
 ---
@@ -174,6 +174,7 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-02 | Claude Code | P3-5 | Remove per-frame sub-pixel jitter from GenerateCameraRay (ROOT CAUSE of watercolor blur). Jitter caused 24-frame temporal accumulation to average differently-positioned samples at every checker/edge boundary → gray blend = watercolor. REBLUR has no jitter compensation in motion vectors; jitter is only valid for traditional TAA. Commit c93e521.
 2026-05-02 | Claude Code | P3-5 | prepassBlurRadius 16/12→8/8 + planeDistanceSensitivity 0.025→0.08 + lobeAngleFraction/roughnessFraction 0.16→0.25. After A=30 fix, watercolor blur persisted from diffusePrepassBlurRadius=16 smearing raw input before temporal. Halved prepass radii; tightened edge-based rejection to preserve surface boundaries. Build passed. Commit dc8ce78.
 2026-05-02 | Claude Code | P3-5 | maxBlurRadius 18→12 (Step 2-3). Building walls/checker still watercolor-blurry. Commit 982f1d6.
 2026-05-02 | Claude Code | P3-5 | hitDistanceParameters.A 3→30 (scene scale fix) + maxStabilizedFrameNum 0→30. Scene AABB 50x60x27m (diagonal 83m). A=3 saturated all secondary hits >4m to normHitDist=1.0 → REBLUR max-blur on entire scene. A=30 restores proper [0,1] range for 5-25m hits. Both C++ ReblurSettings and HLSL REBLUR_HIT_DIST_PARAMS.x updated to 30 (must stay bit-identical). maxStabilizedFrameNum restored 0→30 re-enables temporal stabilization. Build passed. Next: F2 capture to judge improvement; if still blurry try maxBlurRadius 18→12.
