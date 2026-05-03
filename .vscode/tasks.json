@@ -6,7 +6,7 @@
             "label": "CMake: build",
             "command": "build",
             "targets": [
-                "PT_Object_Loading"
+                "Path_Tracing"
             ],
             "group": {
                 "kind": "build",

@@ -74,6 +74,66 @@ struct ShaderLight {
 StructuredBuffer<ShaderLight> g_lights : register(t6);
 
 // -------------------------------------------------------
+// 환경맵 리소스 (t7~t9, s0)
+// -------------------------------------------------------
+Texture2D<float4> g_envMap     : register(t7);
+Texture2D<float>  g_envCondCDF : register(t8);
+Texture2D<float>  g_envMargCDF : register(t9);
+SamplerState      g_envSampler : register(s0);
+
+float2 DirToEnvUV(float3 dir) {
+    float phi   = atan2(dir.z, dir.x);
+    float theta = acos(clamp(dir.y, -1.0f, 1.0f));
+    return float2(
+        (phi + PI) / (2.0f * PI),
+        theta / PI
+    );
+}
+
+float3 SampleEnvironmentMap(float3 direction) {
+    float2 uv = DirToEnvUV(normalize(direction));
+    return g_envMap.SampleLevel(g_envSampler, uv, 0).rgb;
+}
+
+int BinarySearchCDF(Texture2D<float> cdf, int row, int size, float xi) {
+    int lo = 0, hi = size - 1;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (cdf.Load(int3(mid, row, 0)).r < xi)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+float3 SampleEnvMapDir(float2 xi, uint envW, uint envH, out float pdfOut) {
+    pdfOut = 0.0f;
+    int y = BinarySearchCDF(g_envMargCDF, 0, (int)envH, xi.y);
+    int x = BinarySearchCDF(g_envCondCDF, y, (int)envW, xi.x);
+
+    float u     = (x + 0.5f) / (float)envW;
+    float v     = (y + 0.5f) / (float)envH;
+    float phi   = u * 2.0f * PI - PI;
+    float theta = v * PI;
+    float sinT  = sin(theta);
+    float cosT  = cos(theta);
+
+    if (sinT < 1e-6f) { pdfOut = 1.0f; return float3(0, 1, 0); }
+
+    float3 L = normalize(float3(sinT * cos(phi), cosT, sinT * sin(phi)));
+    pdfOut = (float)(envW * envH) / (2.0f * PI * PI * sinT + 1e-10f);
+    return L;
+}
+
+float EnvMapPdf(float3 L, uint envW, uint envH) {
+    float2 uv  = DirToEnvUV(normalize(L));
+    float  sinT = sin(uv.y * PI);
+    if (sinT < 1e-6f) return 0.0f;
+    return (float)(envW * envH) / (2.0f * PI * PI * sinT + 1e-10f);
+}
+
+// -------------------------------------------------------
 // SurfaceHit
 // -------------------------------------------------------
 struct SurfaceHit {
@@ -92,6 +152,26 @@ void SetFaceNormal(Ray ray, float3 outwardNormal, inout SurfaceHit hit) {
 
 bool IsEmitter(ShaderMaterial mat) {
     return dot(mat.emissive, float3(1, 1, 1)) > 0.001f;
+}
+
+// -------------------------------------------------------
+// 스카이 컬러 (야간 하늘 + 달)
+// -------------------------------------------------------
+float3 GetSkyColor(float3 direction) {
+    float t = clamp(direction.y * 0.5f + 0.5f, 0.0f, 1.0f);
+    float3 horizon = float3(0.02f, 0.02f, 0.05f);
+    float3 zenith  = float3(0.005f, 0.005f, 0.02f);
+    float3 sky     = lerp(horizon, zenith, t);
+
+    float3 moonDir = normalize(float3(-0.3f, 0.7f, 0.2f));
+    float  moonDot = dot(normalize(direction), moonDir);
+    if (moonDot > 0.9998f) {
+        sky += float3(1.5f, 1.4f, 1.2f);
+    } else if (moonDot > 0.990f) {
+        float g = (moonDot - 0.990f) / (0.9998f - 0.990f);
+        sky += lerp(float3(0,0,0), float3(0.04f, 0.04f, 0.03f), g);
+    }
+    return sky;
 }
 
 // -------------------------------------------------------
@@ -181,27 +261,6 @@ bool SceneIntersect(Ray ray, out SurfaceHit hit) {
     hit = (SurfaceHit)0;
     float tClosest = 1e30f;
     bool  hitAny   = false;
-
-    // 바닥 평면 (y = 0)
-    float3 planeN = float3(0, 1, 0);
-    float  denom  = dot(ray.direction, planeN);
-    if (abs(denom) > 0.0001f) {
-        float tPlane = -dot(ray.origin, planeN) / denom;
-        if (tPlane > 0.0001f && tPlane < tClosest) {
-            tClosest               = tPlane;
-            hitAny                 = true;
-            hit.t                  = tPlane;
-            hit.p                  = ray.origin + tPlane * ray.direction;
-            hit.normal             = planeN;
-            hit.frontFace          = true;
-            float2 uv              = hit.p.xz;
-            float checker          = (fmod(abs(floor(uv.x) + floor(uv.y)), 2.0f) < 1.0f) ? 1.0f : 0.0f;
-            hit.material.albedo    = lerp(float3(0.3f,0.3f,0.3f), float3(0.9f,0.9f,0.9f), checker);
-            hit.material.roughness = 0.8f;
-            hit.material.metallic  = 0.0f;
-            hit.material.emissive  = float3(0, 0, 0);
-        }
-    }
 
     // 광원 (구/삼각형/사각형)
     for (int li = 0; li < (int)g_lightCount; ++li) {
@@ -341,13 +400,6 @@ bool IsOccluded(float3 origin, float3 target) {
     Ray    sr;
     sr.origin    = origin;
     sr.direction = toTarget / dist;
-
-    // 바닥 평면
-    float pd = dot(sr.direction, float3(0, 1, 0));
-    if (abs(pd) > 0.0001f) {
-        float tp = -dot(sr.origin, float3(0, 1, 0)) / pd;
-        if (tp > 0.001f && tp < dist - 0.001f) return true;
-    }
 
     // BVH 섀도우 순회
     float3 srInvD = 1.0f / sr.direction;

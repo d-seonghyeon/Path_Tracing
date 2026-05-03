@@ -87,10 +87,44 @@ SceneDesc MakeCityScene() {
 
     // -------------------------------------------------------
     // 도로 & 보도
-    // -------------------------------------------------------
     desc.boxes.push_back({{-4.0f,-0.05f,-10.0f}, { 4.0f, 0.00f, 35.0f}, matRoad});
     desc.boxes.push_back({{-6.0f,-0.05f,-10.0f}, {-4.0f, 0.02f, 35.0f}, matSide});
     desc.boxes.push_back({{ 4.0f,-0.05f,-10.0f}, { 6.0f, 0.02f, 35.0f}, matSide});
+
+    // [추가] 바닥 표면 quad (BVH에 포함되어 NEE 정상 작동)
+    // 도로 (checker 패턴)
+    GpuMaterial matChecker{};
+    matChecker.albedo    = glm::vec3(0.6f, 0.6f, 0.6f);
+    matChecker.roughness = 0.8f;
+
+    desc.quads.push_back({
+        {-4.0f, 0.0f, -2.0f},
+        { 4.0f, 0.0f, -2.0f},
+        { 4.0f, 0.0f, 32.0f},
+        {-4.0f, 0.0f, 32.0f},
+        {0.0f, 1.0f, 0.0f},
+        matChecker
+    });
+
+    // 보도 (왼쪽)
+    desc.quads.push_back({
+        {-6.0f, 0.02f, -2.0f},
+        {-4.0f, 0.02f, -2.0f},
+        {-4.0f, 0.02f, 32.0f},
+        {-6.0f, 0.02f, 32.0f},
+        {0.0f, 1.0f, 0.0f},
+        matSide
+    });
+
+    // 보도 (오른쪽)
+    desc.quads.push_back({
+        { 4.0f, 0.02f, -2.0f},
+        { 6.0f, 0.02f, -2.0f},
+        { 6.0f, 0.02f, 32.0f},
+        { 4.0f, 0.02f, 32.0f},
+        {0.0f, 1.0f, 0.0f},
+        matSide
+    });
 
     // -------------------------------------------------------
     // 물웅덩이 (도로면보다 0.5mm 위)
@@ -132,7 +166,7 @@ SceneDesc MakeCityScene() {
         { 6.0f, -1.0f, 14.0f, 26.0f, 9},  // D
     };
     // 패턴: 0=warm, 1=cool1, 2=cool2, 3=dark
-    const int PAT[] = {0,0,3, 0,2,0, 3,0,1, 0,1,0, 3,0,0, 0,2,3, 1,0,0, 0,3,1, 0,0,2};
+    const int PAT[] = {0,3,3, 3,2,3, 3,0,3, 0,3,3, 1,3,0, 3,2,3, 3,0,3, 0,3,1, 3,3,2};
     const int   WPF  = 3;     // 층당 창문 수
     const float WH   = 1.4f;  // 창 높이
     const float WZ   = 1.5f;  // 창 폭 (Z축)
@@ -164,6 +198,16 @@ SceneDesc MakeCityScene() {
                     {fx, yT, z1}, {fx, yT, z0},
                     n, mat
                 });
+                // [추가] emissive 창문만 NEE 광원으로 등록
+                if (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f) {
+                    desc.lights.push_back(
+                        LightDesc::MakeQuad(
+                            {fx, yB, z0}, {fx, yB, z1},
+                            {fx, yT, z1}, {fx, yT, z0},
+                            mat.emissive
+                        )
+                    );
+                }
             }
         }
     }

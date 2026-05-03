@@ -109,6 +109,8 @@ bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
 
     // 6. 씬 버퍼 빌드
     if (!BuildSceneBuffers(device)) return false;
+    m_envMap = EnvMap::Load(device, "hdri/moonless_golf_4k.hdr");
+
 
     // 7. 출력 텍스처 생성
     OnResize(device, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -295,6 +297,10 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
     front.z = cos(glm::radians(m_pitch)) * sin(glm::radians(m_yaw));
     m_cameraFront = glm::normalize(front);
     glm::vec3 right = glm::normalize(glm::cross(m_cameraFront, m_cameraUp));
+    //[FIX] 실제 카메라 업 벡터 = right × front (항상 직교 보장)
+    glm::vec3 actualUp = glm::normalize(glm::cross(right, m_cameraFront));
+
+
 
     // -------------------------------------------------------
     // 패스 1: PathTracer — 누적만 수행
@@ -305,10 +311,15 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         globalData.fov         = glm::radians(45.0f);
         globalData.cameraFront = m_cameraFront;
         globalData.aspectRatio = (float)width / (float)height;
-        globalData.cameraUp    = m_cameraUp;
+        globalData.cameraUp    = actualUp;;
         globalData.frameCount  = (float)m_frameCount;
         globalData.cameraRight = right;
         globalData.lightCount  = m_lightCount;
+        bool hasEnv = m_envMap && m_envMap->IsLoaded();
+        globalData.envWidth  = hasEnv ? (uint32_t)m_envMap->GetWidth()  : 0u;
+        globalData.envHeight = hasEnv ? (uint32_t)m_envMap->GetHeight() : 0u;
+        globalData.hasEnvMap = hasEnv ? 1u : 0u;
+        globalData._pad      = 0.0f;
         m_globalBuffer->UpdateData(context, globalData);
 
         // b0: PathTracer 상수 버퍼
@@ -316,16 +327,25 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         context->CSSetConstantBuffers(0, 1, &gBuf);
 
         // t0~t6: 씬 데이터 SRV
-        ID3D11ShaderResourceView *srvs[7] = {
-            m_vertexSRV.Get(),
-            m_indexSRV.Get(),
-            m_meshInfoSRV.Get(),
-            m_materialSRV.Get(),
-            m_bvhNodeSRV.Get(),
-            m_bvhPrimSRV.Get(),
-            m_lightSRV.Get(),
+        ID3D11ShaderResourceView *srvs[10] = {
+            m_vertexSRV.Get(),                                    // t0
+            m_indexSRV.Get(),                                     // t1
+            m_meshInfoSRV.Get(),                                  // t2
+            m_materialSRV.Get(),                                  // t3
+            m_bvhNodeSRV.Get(),                                   // t4
+            m_bvhPrimSRV.Get(),                                   // t5
+            m_lightSRV.Get(),                                     // t6
+            hasEnv ? m_envMap->GetEnvSRV()     : nullptr,        // t7
+            hasEnv ? m_envMap->GetCondCDFSRV() : nullptr,        // t8
+            hasEnv ? m_envMap->GetMargCDFSRV() : nullptr,        // t9
         };
-        context->CSSetShaderResources(0, 7, srvs);
+        context->CSSetShaderResources(0, 10, srvs);
+
+        // s0: 환경맵 샘플러
+        ID3D11SamplerState* samplers[1] = {
+            hasEnv ? m_envMap->GetSampler() : nullptr
+        };
+        context->CSSetSamplers(0, 1, samplers);
 
         // u0: HDR 누적 버퍼만 바인딩 (PathTracer는 u1 사용 안 함)
         ID3D11UnorderedAccessView *uavs[1] = { m_accumUAV.Get() };
@@ -337,10 +357,12 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         m_pathTracerProgram->Dispatch(context, gx, gy, 1);
 
         // PathTracer 리소스 해제
-        ID3D11UnorderedAccessView *nullUAV[1] = { nullptr };
+        ID3D11UnorderedAccessView* nullUAV[1] = { nullptr };
         context->CSSetUnorderedAccessViews(0, 1, nullUAV, nullptr);
-        ID3D11ShaderResourceView *nullSRVs[7] = {};
-        context->CSSetShaderResources(0, 7, nullSRVs);
+        ID3D11ShaderResourceView* nullSRVs[10] = {};
+        context->CSSetShaderResources(0, 10, nullSRVs);
+        ID3D11SamplerState* nullSamplers[1] = { nullptr };
+        context->CSSetSamplers(0, 1, nullSamplers);
     }
 
     // -------------------------------------------------------

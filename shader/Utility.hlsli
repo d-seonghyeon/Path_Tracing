@@ -30,33 +30,16 @@ float GetRandomFloat(uint2 pixelCoord, uint bounce, uint frameCount) {
 }
 
 float2 GetRandomSamples(uint2 pixelCoord, uint bounce, uint frameCount) {
+    // 기존 유지 — 하지만 PCG를 2회 체이닝해서 시드 품질만 올림
     uint baseSeed = pixelCoord.x * 1973u + pixelCoord.y * 9277u + bounce * 26699u;
-    float2 h2 = float2(
-        UintToFloat01(PCGHash(baseSeed)),
-        UintToFloat01(PCGHash(baseSeed + 31337u))
-    );
+    uint s1 = PCGHash(baseSeed);
+    uint s2 = PCGHash(s1);  // 2회차: 상관성 제거
+
+    float2 h2 = float2(UintToFloat01(s1), UintToFloat01(s2));
     const float2 alpha = float2(0.75487766f, 0.56984029f);
     return frac(h2 + (float)frameCount * alpha);
 }
 
-// -------------------------------------------------------
-// 스카이 컬러 (야간 하늘 + 달)
-// -------------------------------------------------------
-float3 GetSkyColor(float3 direction) {
-    float t = clamp(direction.y * 0.5f + 0.5f, 0.0f, 1.0f);
-    float3 horizon = float3(0.02f, 0.02f, 0.05f);
-    float3 zenith  = float3(0.005f, 0.005f, 0.02f);
-    float3 sky     = lerp(horizon, zenith, t);
 
-    float3 moonDir = normalize(float3(-0.3f, 0.7f, 0.2f));
-    float  moonDot = dot(normalize(direction), moonDir);
-    if (moonDot > 0.9998f) {
-        sky += float3(1.5f, 1.4f, 1.2f);
-    } else if (moonDot > 0.990f) {
-        float g = (moonDot - 0.990f) / (0.9998f - 0.990f);
-        sky += lerp(float3(0,0,0), float3(0.04f, 0.04f, 0.03f), g);
-    }
-    return sky;
-}
 
 #endif

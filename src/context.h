@@ -10,6 +10,7 @@
 #include "model.h"
 #include "bvh.h"
 #include "scene_desc.h"
+#include "EnvMap.h"
 
 // -------------------------------------------------------
 // GPU 상수 버퍼 - 카메라 파라미터 (PathTracer cbuffer b0)
@@ -23,6 +24,10 @@ struct GlobalUniforms {
     float     frameCount;
     glm::vec3 cameraRight;
     uint32_t  lightCount;
+    uint32_t  envWidth;
+    uint32_t  envHeight;
+    uint32_t  hasEnvMap;
+    float     _pad;
 };
 
 // -------------------------------------------------------
@@ -87,6 +92,10 @@ private:
     // 상수 버퍼
     BufferUPtr m_globalBuffer;
     BufferUPtr m_toneMapBuffer;    // [추가] 톤맵 상수 버퍼
+
+    // [추가] 환경맵 (HDRI + CDF LUT)
+    EnvMapUPtr m_envMap;
+
 
     // --- Camera State ---
     glm::vec3 m_cameraPos   { 0.0f, 2.5f, -6.0f };

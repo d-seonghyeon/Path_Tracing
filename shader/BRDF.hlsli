@@ -19,6 +19,11 @@ float PowerHeuristic(float pdfA, float pdfB) {
     float b2 = pdfB * pdfB;
     return a2 / (a2 + b2 + 1e-10f);
 }
+// Balance Heuristic for MIS
+float BalanceHeuristic(float pdfA, float pdfB){
+    return pdfA / (pdfA + pdfB + 1e-10f);
+}
+
 
 // -------------------------------------------------------
 // 1. NDF: GGX 분포

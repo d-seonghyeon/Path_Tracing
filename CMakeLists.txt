@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 cmake_policy(SET CMP0077 NEW)
 cmake_policy(SET CMP0091 NEW)  # CMAKE_MSVC_RUNTIME_LIBRARY 활성화
 
-set(PROJECT_NAME PT_Object_Loading)
+set(PROJECT_NAME Path_Tracing)
 project(${PROJECT_NAME})
 
 set(CMAKE_CXX_STANDARD 17)
@@ -16,6 +16,8 @@ set(MODEL_SRC_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/model")
 set(OUTPUT_BASE_DIR "${CMAKE_BINARY_DIR}")
 set(OUTPUT_SHADER_DIR "${OUTPUT_BASE_DIR}/shader")
 set(OUTPUT_MODEL_DIR  "${OUTPUT_BASE_DIR}/model")
+set(HDRI_SRC_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/hdri")
+set(OUTPUT_HDRI_DIR "${OUTPUT_BASE_DIR}/hdri")
 
 # 2. 파일 스캔
 file(GLOB_RECURSE SHADER_SOURCES CONFIGURE_DEPENDS
@@ -48,8 +50,10 @@ endforeach()
 add_custom_target(UpdateAssets
     DEPENDS ${ALL_DEST_SHADERS}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_MODEL_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${MODEL_SRC_DIR}" "${OUTPUT_MODEL_DIR}"
-    COMMENT "Syncing shaders and models..."
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_HDRI_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${MODEL_SRC_DIR}"  "${OUTPUT_MODEL_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${HDRI_SRC_DIR}"   "${OUTPUT_HDRI_DIR}"
+    COMMENT "Syncing shaders, models, and HDRIs..."
 )
 
 # 5. 실행 파일 생성
@@ -67,6 +71,7 @@ add_executable(${PROJECT_NAME}
     src/gltf_loader.h      src/gltf_loader.cpp
     src/bvh.h              src/bvh.cpp
     src/scene_desc.h       src/scene_desc.cpp
+    src/EnvMap.h           src/EnvMap.cpp
     ${SHADER_SOURCES}
 )
 
@@ -79,7 +84,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${DEP_INCLUDE_DIR})
 target_link_directories(${PROJECT_NAME}    PUBLIC ${DEP_LIB_DIR})
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC
-    WINDOW_NAME=\"PT_Object_Loading\"
+    WINDOW_NAME=\"Path_Tracing\"
     WINDOW_WIDTH=960
     WINDOW_HEIGHT=540
     _ITERATOR_DEBUG_LEVEL=2  # Assimp Debug 빌드와 일치
