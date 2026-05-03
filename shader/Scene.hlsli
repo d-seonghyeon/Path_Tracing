@@ -481,7 +481,7 @@ float3 SampleDirectLight(
         if (NdotL <= 0.0f) return float3(0, 0, 0);
 
         Ray shadowRay;
-        shadowRay.origin    = hitP + hitN * 0.001f;
+        shadowRay.origin    = hitP + hitN * 0.005f;//shadow acne problem 0.001f->0.005f
         shadowRay.direction = L;
         HitRecord lightRec;
         if (!IntersectSphere(shadowRay, light.p0, light.radius, lightRec))
@@ -532,7 +532,7 @@ float3 SampleDirectLight(
     // -------------------------------------------------------
     // 공통: 차폐 검사 + BRDF 평가
     // -------------------------------------------------------
-    if (IsOccluded(hitP + hitN * 0.001f, lPos))
+    if (IsOccluded(hitP + hitN * 0.005f, lPos))//shadow acne-> 0.001f->0.005f
         return float3(0, 0, 0);
 
     lightPdfOut = pdfLight;

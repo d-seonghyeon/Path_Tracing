@@ -184,7 +184,7 @@ float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
             if (NdotL > 0.0f && envPdf > 0.0f) {
                 // 섀도우 레이 — 환경맵까지 차폐 없는지 확인 (먼 거리로 쏨)
                 float3 shadowTarget = hit.p + Lenv * 1e4f;
-                if (!IsOccluded(hit.p + N * 0.001f, shadowTarget)) {
+                if (!IsOccluded(hit.p + N * 0.005f, shadowTarget)) { //shadowacne ->0.001f-> 0.005f
                     // 전체 BRDF 평가
                     BRDFResult envBrdf = EvaluateBRDF(
                         N, V, Lenv,
@@ -269,7 +269,7 @@ float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
         }
 
         // 다음 바운스 레이 설정 (법선 방향으로 약간 오프셋)
-        ray.origin    = hit.p + N * 0.001f;
+        ray.origin    = hit.p + N * 0.005f; //shadow acne ->0.001f->0.005f
         ray.direction = L;
     }
 
