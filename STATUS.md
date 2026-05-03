@@ -7,47 +7,54 @@
 
 ## 0. Current Phase
 
-- Active phase: `Phase 4 - Validation / A-B`
-- Detailed sub-phase: `P4 complete - ready for review / handoff`
+- Active phase: `Phase 5 - REBLUR quality tuning`
+- Detailed sub-phase: `P5-3 - Firefly suppression`
 - Blocked: `No`
-- Branch: `feature/nrd-phase0`
+- Branch: `master` (feature/nrd-phase0 는 master에 병합 완료 후 삭제됨)
 
 ### Phase Checklist
 
 Phase 0 - Render pipeline prerequisites
 
-- [ ] `[C]` Remove accumulation model and `g_accum += ...` from `PathTracer.hlsl`
-- [ ] `[C]` Remove `/(frameCount+1)` from `Tonemap.hlsl`
-- [ ] `[C]` Split `TracePath` return into diffuse / specular radiance
-- [ ] `[C]` Add 7 G-buffer UAVs in `context.h` / `context.cpp`
-- [ ] `[X]` Add `prevViewProj` / `currViewProj` to `GlobalUB` and upload from C++
-- [ ] `[X]` Add motion vector generation to the PathTracer output path
-- [ ] `[C]` Add `Composite.hlsl` for `diffuse + specular + emissive` (albedo already in BRDF output)
-- [ ] `[R]` Codex reviews Claude's Phase 0 diffs
+- [x] `[C]` Remove accumulation model and `g_accum += ...` from `PathTracer.hlsl`
+- [x] `[C]` Remove `/(frameCount+1)` from `Tonemap.hlsl`
+- [x] `[C]` Split `TracePath` return into diffuse / specular radiance
+- [x] `[C]` Add 7 G-buffer UAVs in `context.h` / `context.cpp`
+- [x] `[X]` Add `prevViewProj` / `currViewProj` to `GlobalUB` and upload from C++
+- [x] `[X]` Add motion vector generation to the PathTracer output path
+- [x] `[C]` Add `Composite.hlsl` for `diffuse + specular + emissive` (albedo already in BRDF output)
+- [x] `[R]` Codex reviews Claude's Phase 0 diffs
 
 Phase 1 - NRD dependency integration
 
-- [ ] `[X]` Add `dep_nrd` in `Dependency.cmake` (`v4.14.3`, DXBC embed)
-- [ ] `[X]` Add NRD include / link paths in `CMakeLists.txt`
-- [ ] `[R]` Claude reviews the CMake diff
+- [x] `[X]` Add `dep_nrd` in `Dependency.cmake` (`v4.14.3`, DXBC embed)
+- [x] `[X]` Add NRD include / link paths in `CMakeLists.txt`
+- [x] `[R]` Claude reviews the CMake diff
 
 Phase 2 - NrdDenoiser wrapper + DXBC pipeline
 
-- [ ] `[X]` Scaffold `src/nrd_denoiser.{h,cpp}` for permanent / transient pool + identifiers
-- [ ] `[X]` Build `ID3D11ComputeShader` objects from NRD `PipelineDesc`
-- [ ] `[C]` Review DX11 binding table / slot conflicts / resource lifetime
+- [x] `[X]` Scaffold `src/nrd_denoiser.{h,cpp}` for permanent / transient pool + identifiers
+- [x] `[X]` Build `ID3D11ComputeShader` objects from NRD `PipelineDesc`
+- [x] `[C]` Review DX11 binding table / slot conflicts / resource lifetime
 
 Phase 3 - Quality tuning
 
-- [ ] `[C]` HitT normalization + NRD helper packing
-- [ ] `[C]` Anti-lag / disocclusion threshold sweep
-- [ ] `[X]` Optional SIGMA / ReLAX experiments
+- [x] `[C]` HitT normalization + NRD helper packing
+- [x] `[C]` Anti-lag / disocclusion threshold sweep
+- [ ] `[X]` Optional SIGMA / ReLAX experiments (미구현 — 선택 사항)
 
 Phase 4 - Validation / A-B
 
-- [ ] `[C]` A/B toggle (`F1 = denoise on/off`)
-- [ ] `[C]` FLIP / SSIM offline comparison
-- [ ] `[X]` Timestamp query profiling for tracing vs denoise
+- [x] `[C]` A/B toggle (`F1 = denoise on/off`)
+- [x] `[C]` FLIP / SSIM offline comparison (avg64 reference + exposure-matched metrics)
+- [ ] `[X]` Timestamp query profiling for tracing vs denoise (미구현)
+
+Phase 5 - REBLUR quality tuning (진행 중)
+
+- [x] Checker plane baseline (sidewalk 제거, 2m 타일, 대비 0.18/0.72)
+- [x] Blur-radius sweep (prepass=6, maxBlur=9)
+- [ ] Firefly suppression (P5-3, 커밋 대기 중)
+- [ ] Camera teleport → CLEAR_AND_RESTART (미구현 — 씬 컷 발생 시 필요)
 
 ---
 
@@ -55,11 +62,11 @@ Phase 4 - Validation / A-B
 
 | Item | Value |
 | --- | --- |
-| Hash | `32dae41` |
+| Hash | `558d730` |
 | Author | choi mun chan |
 | Date | 2026-05-02 |
-| Scope | `P3` STATUS.md — document jitter root cause fix |
-| Summary | Jitter removal (c93e521) confirmed as root cause of watercolor blur. Per-frame ±0.5px sub-pixel jitter in GenerateCameraRay caused 24-frame temporal accumulation to blend checker/edge pixels across tile boundaries. Removed jitter; REBLUR now accumulates consistent pixel positions. |
+| Scope | `P5` docs — update diagnosis §6 settings and §8 task status, STATUS next action |
+| Summary | REBLUR prepass=6/max=9 blur-radius sweep 채택 완료. 체커 plane baseline 확보 (sidewalk 박스 제거, 타일 2m, 대비 0.18/0.72). P5-3 firefly suppression 작업 시작 (미커밋 상태). |
 
 ---
 
@@ -68,18 +75,27 @@ Phase 4 - Validation / A-B
 Do exactly one next action, not a vague "continue".
 
 ```
-[P5 Complete] Checker baseline + blur-radius sweep done.
+[P5-3 진행 중] Firefly suppression — 미커밋 변경 사항 검증 후 커밋.
 
-P5 결과 요약:
-  - sidewalk 박스 제거 → y=0 체커 plane 노출 (P5-1)
-  - 2m 타일 크기, 대비 (0.18, 0.72) 적용 (P5-1)
-  - blur-radius sweep: prepass 8→6, maxBlur 12→9 채택 (P5-2)
-  - 근거리 2m 체커 보존 확인, 건물 벽 노이즈 허용 수준
+현재 미커밋 변경:
+  shader/PathTracer.hlsl:
+    - FIREFLY_CLAMP = 5.0f 상수 추가
+    - clamp(r.diffuse, 0, 10) → 휘도 기반 hue-preserving 클램프
+      (lumD > 5 이면 r.diffuse * (5/lumD), 색조 보존)
+    - specular 동일 방식 적용
 
-남은 선택지:
-  A. 기하학 에지 aliasing 판단 → Halton jitter + cameraJitter[] 도입 여부
-  B. S3 Fireflies 잔존 추가 감소 (antilag 파라미터 재조정)
-  C. 현 상태 Phase 5 완료로 문서화 후 다음 Phase 기획
+  src/nrd_denoiser.cpp:
+    - luminanceSigmaScale : 3.5 → 2.5  (더 좁은 임계 → firefly 차단 강화)
+    - luminanceSensitivity: 2.5 → 3.5  (이상값 반응 ↑)
+
+다음 단계:
+  1. cmake --build build --config Debug --target ALL_BUILD 빌드
+  2. 실행 후 F1 OFF/ON 시각 비교 (firefly 잔존 여부 확인)
+  3. 확인 후 커밋 (P5-3: PathTracer firefly clamp + antilag sweep)
+  4. 이후 선택지:
+     A. Halton jitter + CommonSettings.cameraJitter[] (geometric AA)
+     B. Camera teleport → CLEAR_AND_RESTART 구현
+     C. Phase 5 완료 문서화 후 다음 Phase 기획
 ```
 
 ---
@@ -119,7 +135,7 @@ P5 결과 요약:
 - P3-4 black-output is closed (2026-05-01). Root cause was missing SRV for `OUT_DIFF/OUT_SPEC_RADIANCE_HITDIST` in temporal accumulation pass.
 - Resize validated: `Context::OnResize()` uses staged allocation; app survived two live resizes.
 
-### Current REBLUR settings (src/nrd_denoiser.cpp as of 2026-05-02)
+### Current REBLUR settings (src/nrd_denoiser.cpp as of 2026-05-03, P5-3 미커밋)
 
 ```cpp
 // hitT normalization — must stay in sync with HLSL REBLUR_HIT_DIST_PARAMS
@@ -130,8 +146,8 @@ reblurSettings.hitDistanceParameters = { A=30.0f, B=0.1f, C=20.0f, D=-25.0f };
 // ↑ HLSL mirror: shader/PathTracer.hlsl REBLUR_HIT_DIST_PARAMS = float4(30,0.1,20,-25)
 // ↑ Both values MUST stay bit-identical — changing one without the other breaks normHitDist.
 
-reblurSettings.antilagSettings.luminanceSigmaScale  = 3.5f;
-reblurSettings.antilagSettings.luminanceSensitivity = 2.5f;
+reblurSettings.antilagSettings.luminanceSigmaScale  = 2.5f;  // P5-3: 3.5→2.5 (firefly 억제 강화)
+reblurSettings.antilagSettings.luminanceSensitivity = 3.5f;  // P5-3: 2.5→3.5 (이상값 반응 ↑)
 reblurSettings.maxAccumulatedFrameNum               = 24;
 reblurSettings.maxFastAccumulatedFrameNum           = 4;
 reblurSettings.maxStabilizedFrameNum                = 30;   // 0 = disabled (was wrong)
@@ -145,6 +161,22 @@ reblurSettings.lobeAngleFraction                    = 0.25f;
 reblurSettings.roughnessFraction                    = 0.25f;
 reblurSettings.planeDistanceSensitivity             = 0.08f; // raised for sharper edge rejection
 ```
+
+### PathTracer.hlsl firefly clamp (P5-3 미커밋)
+
+```hlsl
+static const float FIREFLY_CLAMP = 5.0f;  // P5-3: 이전 uniform clamp(0,10) 대체
+
+// 휘도 기반 hue-preserving clamp (Rec.709 계수)
+float lumD = dot(r.diffuse, float3(0.2126f, 0.7152f, 0.0722f));
+diffuse += (lumD > FIREFLY_CLAMP && lumD > 0.0f)
+           ? r.diffuse * (FIREFLY_CLAMP / lumD)  // 색조 보존, 밝기만 축소
+           : max(0.0f, r.diffuse);
+// specular 동일 방식
+```
+
+이전 방식 `clamp(r.diffuse, 0, 10)`: 채널별 독립 클램프 → 색조 왜곡.  
+새 방식: 전체 휘도가 임계치 초과 시 벡터 비율 유지하여 스케일다운.
 
 #### P5 blur-radius sweep summary (2026-05-02)
 
@@ -282,6 +314,14 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-03 | Claude Code | merge | feature/nrd-phase0 → master 병합 확인. master가 이미
+feature/nrd-phase0보다 6커밋 앞서 있었음(P5 커밋들이 master에서 직접 작성됨).
+feature/nrd-phase0 삭제. Phase 0-4 체크리스트 전체 완료 처리.
+2026-05-03 | Claude Code | P5-3 | Firefly suppression — PathTracer.hlsl의 uniform clamp(0,10)을
+luminance 기반 hue-preserving 클램프(FIREFLY_CLAMP=5.0)로 교체. Rec.709 휘도가
+임계치 초과 시 색조를 유지한 채 스케일다운. nrd_denoiser.cpp antilag 조정:
+sigmaScale 3.5→2.5(임계 축소), sensitivity 2.5→3.5(이상값 반응 강화).
+빌드·시각 검증 대기. 미커밋.
 2026-05-02 | Claude Code | P5-2 | REBLUR blur-radius sweep: prepass 8/max 12 → 4/6 → 6/9.
 prepass=8/max=12에서 2m 체커 완전 소실 확인. prepass=4/max=6에서 체커 보존
 성공했으나 벽면 grain 잔존. prepass=6/max=9이 체커 보존 + 벽 노이즈 제거

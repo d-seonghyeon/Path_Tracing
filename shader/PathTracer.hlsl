@@ -41,6 +41,9 @@ static const int   MAX_BOUNCES       = 6;
 static const int   SAMPLES_PER_PIXEL = 1;
 static const float4 REBLUR_HIT_DIST_PARAMS = float4(30.0f, 0.1f, 20.0f, -25.0f);
 static const float NRD_HIT_T_MAX     = 1e16f; // 하늘/미스 센티널
+// Firefly clamp: luminance 기반으로 hue를 유지하면서 outlier 억제.
+// 일반 간접광 휘도 0.5~2, firefly 5~10+. threshold=5로 시작.
+static const float FIREFLY_CLAMP     = 5.0f;
 
 // -------------------------------------------------------
 // TracePath 반환 구조체
@@ -381,10 +384,18 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
         resDiffuseHitDist = traceDiffuseHitDist;
         resSpecularHitDist = traceSpecularHitDist;
 
-        if (!any(isnan(r.diffuse))  && !any(isinf(r.diffuse)))
-            diffuse  += clamp(r.diffuse,  0.0f, 10.0f);
-        if (!any(isnan(r.specular)) && !any(isinf(r.specular)))
-            specular += clamp(r.specular, 0.0f, 10.0f);
+        if (!any(isnan(r.diffuse))  && !any(isinf(r.diffuse))) {
+            float lumD = dot(r.diffuse, float3(0.2126f, 0.7152f, 0.0722f));
+            diffuse  += (lumD > FIREFLY_CLAMP && lumD > 0.0f)
+                        ? r.diffuse * (FIREFLY_CLAMP / lumD)
+                        : max(0.0f, r.diffuse);
+        }
+        if (!any(isnan(r.specular)) && !any(isinf(r.specular))) {
+            float lumS = dot(r.specular, float3(0.2126f, 0.7152f, 0.0722f));
+            specular += (lumS > FIREFLY_CLAMP && lumS > 0.0f)
+                        ? r.specular * (FIREFLY_CLAMP / lumS)
+                        : max(0.0f, r.specular);
+        }
 
         if (s == 0) res = r; // G-buffer는 첫 번째 샘플 기준
     }

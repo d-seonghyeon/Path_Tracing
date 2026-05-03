@@ -351,8 +351,8 @@ bool NrdDenoiser::Denoise(ID3D11DeviceContext* ctx,
         reblurSettings.hitDistanceParameters.D = -25.0f;
         // Detail-retention pass: keep history responsive and reduce spatial blur now
         // that the REBLUR output no longer collapses to black.
-        reblurSettings.antilagSettings.luminanceSigmaScale   = 3.5f;
-        reblurSettings.antilagSettings.luminanceSensitivity  = 2.5f;
+        reblurSettings.antilagSettings.luminanceSigmaScale   = 2.5f;  // sweep: 3.5→2.5 (firefly 억제)
+        reblurSettings.antilagSettings.luminanceSensitivity  = 3.5f;  // sweep: 2.5→3.5 (outlier 반응 ↑)
         reblurSettings.maxAccumulatedFrameNum                = 24;
         reblurSettings.maxFastAccumulatedFrameNum            = 4;
         reblurSettings.maxStabilizedFrameNum                 = 30;
