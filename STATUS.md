@@ -8,10 +8,10 @@
 ## 0. Current Phase
 
 - Active phase: `Phase 5 - REBLUR quality tuning`
-- Detailed sub-phase: `P5-3a - Firefly clamp 정밀화 (perceptual recovery)`
+- Detailed sub-phase: `P5-3c 완료 — Phase 5 perceptual recovery 종료`
 - Blocked: `No`
 - Branch: `master` (feature/nrd-phase0 는 master에 병합 완료 후 삭제됨)
-- 보조 문서: `P5_PBR_RECOVERY.md` (P5-3a/b/c 진단 및 실행 계획, Phase 5 종료 시 삭제)
+- 보조 문서: `P5_PBR_RECOVERY.md` 삭제됨 (2026-05-04, §7 참조)
 
 ### Phase Checklist
 
@@ -56,8 +56,8 @@ Phase 5 - REBLUR quality tuning (진행 중)
 - [x] Blur-radius sweep (prepass=6, maxBlur=9)
 - [~] Firefly suppression (P5-3, 2026-05-03 미커밋 → perceptual 회귀로 보류, P5-3a로 재진단)
 - [x] **P5-3a Firefly clamp 정밀화** — FIREFLY_CLAMP 20.0, sigma/sensitivity 3.0/3.0, histogram dump. 시각 검증 통과 (puddle 4~5개, shadow OK, no firefly).
-- [~] **P5-3b Specular hitT 분리 packing** — roughness<0.05 → min(hitT, viewZ*2) 클램프. 빌드 성공. 시각 검증 대기.
-- [ ] **P5-3c Firefly-clamped reference 재측정** (`p5_3c_*` artifacts) — `P5_PBR_RECOVERY.md §3` 참조
+- [x] **P5-3b Specular hitT 분리 packing** — roughness<0.05 → min(hitT, viewZ*2) 클램프. 시각 검증 통과 (puddle 6개+, noise 회귀 없음).
+- [x] **P5-3c Firefly-clamped reference 재측정** — avg31 clamped raw vs denoised. exposure_matched_ssim=0.9557 (기준 0.93 PASS, P4-3 대비 +0.027). `build/p5_3c_metrics.json`.
 - [ ] Camera teleport → CLEAR_AND_RESTART (미구현 — 씬 컷 발생 시 필요)
 
 ---
@@ -79,22 +79,21 @@ Phase 5 - REBLUR quality tuning (진행 중)
 Do exactly one next action, not a vague "continue".
 
 ```
-[P5-3b 완료 대기] F1 OFF/ON 시각 검증 단계.
+[P5-3c PASS — 커밋 대기]
 
-적용된 변경 (빌드 성공 2026-05-04):
-  PathTracer.hlsl: roughness < 0.05 → effectiveSpecHitDist = min(rawHitT, viewZ * 2.0)
-  C++ hitDistanceParameters 불변 (HLSL/C++ bit-identical 유지).
+P5-3a/b/c 모두 완료. 미커밋 변경 커밋 준비.
 
-다음 단계:
-  1. 앱 실행 (build/ 에서) → 정적 씬 안정화 (~3초 대기.
-  2. F1 ON → F2 → capture_N_denoised.png 캡처.
-  3. 시각 검증: puddle 두 highlight 모두 visible? 일반 표면 noise 회귀 없음?
-  4. Exit criteria 충족 → 커밋 후 P5-3c 진행.
-     미달 → P5_PBR_RECOVERY.md §4 Decision Log 기록.
+커밋 대상:
+  shader/PathTracer.hlsl  — FIREFLY_CLAMP 20.0, 256-bin histogram, roughness<0.05 hitT 클램프
+  src/context.h           — m_histogramBuffer / m_histogramUAV 선언
+  src/context.cpp         — UAV clear, 8-slot bind, histogram readback (F2 캡처 시)
+  src/nrd_denoiser.cpp    — antilag sigma/sensitivity 3.0/3.0
+  tools/p5_3c_capture.ps1 — 자동 캡처 스크립트
+  tools/p5_3c_metrics.py  — SSIM/PSNR 계산 스크립트
+  STATUS.md / (P5_PBR_RECOVERY.md 삭제)
 
-Exit criteria (P5-3b):
-  - puddle 두 spherical reflection 모두 visible
-  - 일반 표면(벽/바닥) noise 회귀 없음
+커밋 메시지 후보:
+  P5-3a/b/c: firefly clamp 20.0 + specular hitT fix + metrics PASS
 ```
 
 ---
@@ -164,21 +163,26 @@ reblurSettings.roughnessFraction                    = 0.25f;
 reblurSettings.planeDistanceSensitivity             = 0.08f; // raised for sharper edge rejection
 ```
 
-### P5-3a 적용 변경 (2026-05-04, 미커밋 — 시각 검증 후 커밋 예정)
+### P5-3a/b 적용 변경 (2026-05-04, 커밋됨)
 
 ```cpp
-// P5-3a 적용값
-reblurSettings.antilagSettings.luminanceSigmaScale  = 3.0f;  // P5-3a 균형
-reblurSettings.antilagSettings.luminanceSensitivity = 3.0f;  // P5-3a 균형
+// P5-3a 최종값 (시각 검증 통과)
+reblurSettings.antilagSettings.luminanceSigmaScale  = 3.0f;
+reblurSettings.antilagSettings.luminanceSensitivity = 3.0f;
 ```
 
 ```hlsl
-// P5-3a 적용값 (P5-3의 5.0에서 완화)
+// P5-3a 최종값: FIREFLY_CLAMP 5.0 → 20.0 (99.9th percentile ~12.17 기준)
 static const float FIREFLY_CLAMP = 20.0f;
-// u7: g_luminanceHistogram — 256-bin log2 histogram, F2 캡처 시 histogram_N_*.txt 덤프
+// u7: g_luminanceHistogram — 256-bin log2 histogram (pre-clamp), F2 캡처 시 histogram_N_*.txt 덤프
+
+// P5-3b 최종값: roughness < 0.05 mirror surface hitT cap (puddle max-blur 방지)
+// effectiveSpecHitDist = (roughness < 0.05 && hitSurface && specularHitDist > 0)
+//     ? min(specularHitDist, viewZ * 2.0f)
+//     : specularHitDist;
 ```
 
-Exit criteria 충족 시 커밋 후 P5-3b로 진행.
+P5-3c 결과: avg31 clamped raw vs denoised, exposure_matched_ssim=0.9557 (기준 0.93 PASS).
 
 #### P5 blur-radius sweep summary (2026-05-02)
 
@@ -337,6 +341,11 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-04 | Claude Code | P5-3c | avg31 clamped raw frames vs denoised 객관 metric 계산.
+exposure_matched_ssim=0.9557 (기준 0.93 PASS, P4-3 baseline 0.9288 대비 +0.027).
+tools/p5_3c_metrics.py JSON 직렬화 버그(numpy.bool_) 수정. P5_PBR_RECOVERY.md §6
+closure criteria 충족: P5-3a/b/c 모두 [x], 사용자 시각 검증 완료, 핵심 결정
+STATUS.md §3 영구 이관, §7에 삭제 기록. P5_PBR_RECOVERY.md 삭제.
 2026-05-04 | Claude Code | P5-3b | roughness<0.05 specular hitT 분리 packing. PathTracer.hlsl에
 effectiveSpecHitDist = min(rawHitT, viewZ*2.0) 분기 추가. C++ hitDistanceParameters 불변.
 빌드 성공 (Debug ALL_BUILD). 사용자 시각 검증 대기 — puddle 두 highlight / noise 회귀.
@@ -454,16 +463,9 @@ OUT_SPEC SRV fix.
 The temporary `NRD_BLACK_OUTPUT_DEBUG.md` plan was removed when advancing
 the active sub-phase past `P3-4`.
 
-### Active: PBR Perceptual Recovery (P5-3a/b/c)
+### Closed: PBR Perceptual Recovery (P5-3a/b/c)
 
-Opened 2026-05-04. F1 ON 객관 metric은 통과했으나 perceptual 회귀 발견:
-그림자 평탄화 / puddle specular 손실 / PBR 톤 분리 손실.
-
-상세 진단 / 실행 계획 / decision log는 `P5_PBR_RECOVERY.md`. 본 문서는
-진행 상태만 추적 (§0 checklist, §2 next action, §5 session log).
-
-Closure criteria (P5_PBR_RECOVERY.md §6):
-1. P5-3a/b/c 모두 §0 checklist에서 `[x]` 처리
-2. 사용자 시각 검증으로 perceptual 회귀 해소 확인
-3. 핵심 결정사항을 STATUS.md §3에 영구 이관
-4. 본 §7에 P5_PBR_RECOVERY.md 삭제 시점 1줄 기록 (NRD_BLACK_OUTPUT_DEBUG.md 패턴)
+P5_PBR_RECOVERY.md was deleted on 2026-05-04. All §6 closure criteria met:
+P5-3a/b/c [x], 사용자 시각 검증 완료(P5-3a puddle 4~5개/shadow, P5-3b puddle 6개+),
+P5-3c exposure_matched_ssim=0.9557 PASS. 핵심 결정(hitT 분기, firefly 임계, 최종 antilag 값)
+STATUS.md §3에 영구 이관 완료.
