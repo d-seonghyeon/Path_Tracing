@@ -99,6 +99,10 @@ private:
     // NRD denoiser (Phase 2)
     NrdDenoiserUPtr m_nrdDenoiser;
 
+    // P5-3a: luminance histogram (256 uint, log2 scale, cleared per frame)
+    ComPtr<ID3D11Buffer>              m_histogramBuffer;
+    ComPtr<ID3D11UnorderedAccessView> m_histogramUAV;
+
     // --- Scene Data ---
     ModelUPtr m_model;
 

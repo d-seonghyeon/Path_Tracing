@@ -36,14 +36,15 @@ RWTexture2D<float4>       g_normalRoughness    : register(u3); // .rg=octa-packe
 RWTexture2D<float2>       g_motionVector       : register(u4); // 픽셀 단위 (prev-curr)
 RWTexture2D<unorm float4> g_baseColorMetalness : register(u5); // .rgb=albedo, .a=metalness
 RWTexture2D<float4>       g_emissive           : register(u6); // .rgb=emissive
+// P5-3a: 256-bin log2 luminance histogram (cleared each frame, readback on F2 capture)
+RWStructuredBuffer<uint>  g_luminanceHistogram : register(u7);
 
 static const int   MAX_BOUNCES       = 6;
 static const int   SAMPLES_PER_PIXEL = 1;
 static const float4 REBLUR_HIT_DIST_PARAMS = float4(30.0f, 0.1f, 20.0f, -25.0f);
 static const float NRD_HIT_T_MAX     = 1e16f; // 하늘/미스 센티널
-// Firefly clamp: luminance 기반으로 hue를 유지하면서 outlier 억제.
-// 일반 간접광 휘도 0.5~2, firefly 5~10+. threshold=5로 시작.
-static const float FIREFLY_CLAMP     = 5.0f;
+// P5-3a: histogram 측정 기반으로 5.0→20.0 완화. 가로등 NEE 정상 신호 보존 목적.
+static const float FIREFLY_CLAMP     = 20.0f;
 
 // -------------------------------------------------------
 // TracePath 반환 구조체
@@ -386,12 +387,20 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
 
         if (!any(isnan(r.diffuse))  && !any(isinf(r.diffuse))) {
             float lumD = dot(r.diffuse, float3(0.2126f, 0.7152f, 0.0722f));
+            if (lumD > 0.0f) {
+                int binD = clamp((int)(log2(lumD + 1.0f) * 32.0f), 0, 255);
+                InterlockedAdd(g_luminanceHistogram[binD], 1u);
+            }
             diffuse  += (lumD > FIREFLY_CLAMP && lumD > 0.0f)
                         ? r.diffuse * (FIREFLY_CLAMP / lumD)
                         : max(0.0f, r.diffuse);
         }
         if (!any(isnan(r.specular)) && !any(isinf(r.specular))) {
             float lumS = dot(r.specular, float3(0.2126f, 0.7152f, 0.0722f));
+            if (lumS > 0.0f) {
+                int binS = clamp((int)(log2(lumS + 1.0f) * 32.0f), 0, 255);
+                InterlockedAdd(g_luminanceHistogram[binS], 1u);
+            }
             specular += (lumS > FIREFLY_CLAMP && lumS > 0.0f)
                         ? r.specular * (FIREFLY_CLAMP / lumS)
                         : max(0.0f, r.specular);

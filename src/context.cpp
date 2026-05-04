@@ -4,6 +4,8 @@
 #include <spdlog/spdlog.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image_write.h>
+#include <fstream>
+#include <cmath>
 
 // -------------------------------------------------------
 // 筌왖??살컭?紐꺿봺 ??밴쉐 ????(???뵬 ??? ?袁⑹뒠)
@@ -123,6 +125,26 @@ bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
 
     // 8. ?곗뮆????용뮞筌???밴쉐
     OnResize(device, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+    // P5-3a: luminance histogram buffer (256 uint, log2 scale, UAV for PathTracer u7)
+    {
+        D3D11_BUFFER_DESC bd = {};
+        bd.ByteWidth           = 256 * sizeof(uint32_t);
+        bd.Usage               = D3D11_USAGE_DEFAULT;
+        bd.BindFlags           = D3D11_BIND_UNORDERED_ACCESS;
+        bd.MiscFlags           = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        bd.StructureByteStride = sizeof(uint32_t);
+        HRESULT hr = device->CreateBuffer(&bd, nullptr, m_histogramBuffer.ReleaseAndGetAddressOf());
+        if (FAILED(hr)) { SPDLOG_ERROR("Histogram buffer 0x{:08x}", (uint32_t)hr); return false; }
+
+        D3D11_UNORDERED_ACCESS_VIEW_DESC uavd = {};
+        uavd.Format              = DXGI_FORMAT_UNKNOWN;
+        uavd.ViewDimension       = D3D11_UAV_DIMENSION_BUFFER;
+        uavd.Buffer.NumElements  = 256;
+        hr = device->CreateUnorderedAccessView(m_histogramBuffer.Get(), &uavd, m_histogramUAV.ReleaseAndGetAddressOf());
+        if (FAILED(hr)) { SPDLOG_ERROR("Histogram UAV 0x{:08x}", (uint32_t)hr); return false; }
+    }
+
     return true;
 }
 
@@ -482,16 +504,21 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         };
         context->CSSetShaderResources(0, 7, srvs);
 
-        ID3D11UnorderedAccessView *uavs[7] = {
-            m_diffuseRadianceUAV.Get(),
-            m_specularRadianceUAV.Get(),
-            m_viewZUAV.Get(),
-            m_normalRoughnessUAV.Get(),
-            m_motionVectorUAV.Get(),
-            m_baseColorMetalnessUAV.Get(),
-            m_emissiveUAV.Get(),
+        // P5-3a: clear histogram before PathTracer so each frame starts fresh
+        UINT histClear[4] = {0, 0, 0, 0};
+        context->ClearUnorderedAccessViewUint(m_histogramUAV.Get(), histClear);
+
+        ID3D11UnorderedAccessView *uavs[8] = {
+            m_diffuseRadianceUAV.Get(),    // u0
+            m_specularRadianceUAV.Get(),   // u1
+            m_viewZUAV.Get(),              // u2
+            m_normalRoughnessUAV.Get(),    // u3
+            m_motionVectorUAV.Get(),       // u4
+            m_baseColorMetalnessUAV.Get(), // u5
+            m_emissiveUAV.Get(),           // u6
+            m_histogramUAV.Get(),          // u7
         };
-        context->CSSetUnorderedAccessViews(0, 7, uavs, nullptr);
+        context->CSSetUnorderedAccessViews(0, 8, uavs, nullptr);
 
         // Dispatch (PathTracer: 16x16 ??살쟿??域밸챶竊?
         uint32_t gx = (width  + 15) / 16;
@@ -499,8 +526,8 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         m_pathTracerProgram->Dispatch(context, gx, gy, 1);
 
         // PathTracer ?귐딅꺖????곸젫
-        ID3D11UnorderedAccessView *nullUAV[7] = {};
-        context->CSSetUnorderedAccessViews(0, 7, nullUAV, nullptr);
+        ID3D11UnorderedAccessView *nullUAV[8] = {};
+        context->CSSetUnorderedAccessViews(0, 8, nullUAV, nullptr);
         ID3D11ShaderResourceView *nullSRVs[7] = {};
         context->CSSetShaderResources(0, 7, nullSRVs);
     }
@@ -639,12 +666,71 @@ void Context::CaptureScreenshot(ID3D11DeviceContext* ctx) {
     }
 
     std::string label = m_denoiseEnabled ? "denoised" : "raw";
-    std::string filename = "capture_" + std::to_string(m_captureIndex++) + "_" + label + ".png";
+    uint32_t captureIdx = m_captureIndex++;
+    std::string filename = "capture_" + std::to_string(captureIdx) + "_" + label + ".png";
     stbi_write_png(filename.c_str(),
                    (int)texDesc.Width, (int)texDesc.Height, 4,
                    mapped.pData, (int)mapped.RowPitch);
     ctx->Unmap(staging.Get(), 0);
     SPDLOG_INFO("Screenshot saved: {}", filename);
+
+    // P5-3a: readback luminance histogram and dump percentiles
+    if (m_histogramBuffer) {
+        D3D11_BUFFER_DESC stageBD = {};
+        stageBD.ByteWidth      = 256 * sizeof(uint32_t);
+        stageBD.Usage          = D3D11_USAGE_STAGING;
+        stageBD.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Buffer> histStaging;
+        HRESULT hr2 = m_device->CreateBuffer(&stageBD, nullptr, histStaging.GetAddressOf());
+        if (SUCCEEDED(hr2)) {
+            ctx->CopyResource(histStaging.Get(), m_histogramBuffer.Get());
+            D3D11_MAPPED_SUBRESOURCE hMapped = {};
+            if (SUCCEEDED(ctx->Map(histStaging.Get(), 0, D3D11_MAP_READ, 0, &hMapped))) {
+                const uint32_t* bins = static_cast<const uint32_t*>(hMapped.pData);
+
+                uint64_t total = 0;
+                for (int i = 0; i < 256; i++) total += bins[i];
+
+                // bin b → luminance center: 2^(b/32) - 1
+                auto lumFromBin = [](int b) -> double {
+                    return std::pow(2.0, b / 32.0) - 1.0;
+                };
+
+                uint64_t cum = 0;
+                double lum99 = 0.0, lum999 = 0.0;
+                for (int i = 0; i < 256; i++) {
+                    cum += bins[i];
+                    if (lum99 == 0.0 && total > 0 && cum * 100 >= total * 99)
+                        lum99 = lumFromBin(i);
+                    if (total > 0 && cum * 1000 >= total * 999) {
+                        lum999 = lumFromBin(i);
+                        break;
+                    }
+                }
+
+                ctx->Unmap(histStaging.Get(), 0);
+
+                std::string histFile = "histogram_" + std::to_string(captureIdx) + "_" + label + ".txt";
+                std::ofstream ofs(histFile);
+                if (ofs) {
+                    ofs << "P5-3a Luminance Histogram  frame=" << m_frameCount
+                        << "  mode=" << label << "  total_samples=" << total << "\n";
+                    ofs << "bin  lum_center  count  cum_pct\n";
+                    uint64_t cumW = 0;
+                    for (int i = 0; i < 256; i++) {
+                        if (bins[i] == 0) continue;
+                        cumW += bins[i];
+                        double pct = total > 0 ? (cumW * 100.0 / total) : 0.0;
+                        ofs << i << "  " << lumFromBin(i) << "  " << bins[i]
+                            << "  " << pct << "%\n";
+                    }
+                    ofs << "99th_percentile_lum=" << lum99 << "\n";
+                    ofs << "99.9th_percentile_lum=" << lum999 << "\n";
+                }
+                SPDLOG_INFO("Histogram saved: {}  99th={:.2f}  99.9th={:.2f}", histFile, lum99, lum999);
+            }
+        }
+    }
 }
 
 void Context::Present(ID3D11DeviceContext *context, ID3D11RenderTargetView *rtv) {
