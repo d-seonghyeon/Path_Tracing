@@ -414,10 +414,15 @@ void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID) {
     // -------------------------------------------------------
     // G-buffer 출력 (per-frame overwrite)
     // -------------------------------------------------------
-    float diffuseHitDist = res.hitSurface ? resDiffuseHitDist : 0.0f;
+    float diffuseHitDist  = res.hitSurface ? resDiffuseHitDist  : 0.0f;
     float specularHitDist = res.hitSurface ? resSpecularHitDist : 0.0f;
-    float diffuseNormHitDist = NrdReblurGetNormHitDist(diffuseHitDist, res.viewZ, REBLUR_HIT_DIST_PARAMS, 1.0f);
-    float specularNormHitDist = NrdReblurGetNormHitDist(specularHitDist, res.viewZ, REBLUR_HIT_DIST_PARAMS, res.roughness);
+    // P5-3b: near-mirror roughness<0.05 — cap hitT to viewZ*2 so REBLUR blur-radius
+    // stays near-surface rather than stretching to lamp distance.
+    float effectiveSpecHitDist = (res.roughness < 0.05f && res.hitSurface && specularHitDist > 0.0f)
+        ? min(specularHitDist, res.viewZ * 2.0f)
+        : specularHitDist;
+    float diffuseNormHitDist  = NrdReblurGetNormHitDist(diffuseHitDist,       res.viewZ, REBLUR_HIT_DIST_PARAMS, 1.0f);
+    float specularNormHitDist = NrdReblurGetNormHitDist(effectiveSpecHitDist, res.viewZ, REBLUR_HIT_DIST_PARAMS, res.roughness);
 
     g_diffuseRadiance[pixelCoord]  = NrdPackReblurRadianceAndNormHitDist(diffuse, diffuseNormHitDist);
     g_specularRadiance[pixelCoord] = NrdPackReblurRadianceAndNormHitDist(specular, specularNormHitDist);

@@ -56,7 +56,7 @@ Phase 5 - REBLUR quality tuning (진행 중)
 - [x] Blur-radius sweep (prepass=6, maxBlur=9)
 - [~] Firefly suppression (P5-3, 2026-05-03 미커밋 → perceptual 회귀로 보류, P5-3a로 재진단)
 - [x] **P5-3a Firefly clamp 정밀화** — FIREFLY_CLAMP 20.0, sigma/sensitivity 3.0/3.0, histogram dump. 시각 검증 통과 (puddle 4~5개, shadow OK, no firefly).
-- [ ] **P5-3b Specular hitT 분리 packing** (roughness < 0.05 분기) — `P5_PBR_RECOVERY.md §3` 참조
+- [~] **P5-3b Specular hitT 분리 packing** — roughness<0.05 → min(hitT, viewZ*2) 클램프. 빌드 성공. 시각 검증 대기.
 - [ ] **P5-3c Firefly-clamped reference 재측정** (`p5_3c_*` artifacts) — `P5_PBR_RECOVERY.md §3` 참조
 - [ ] Camera teleport → CLEAR_AND_RESTART (미구현 — 씬 컷 발생 시 필요)
 
@@ -79,27 +79,22 @@ Phase 5 - REBLUR quality tuning (진행 중)
 Do exactly one next action, not a vague "continue".
 
 ```
-[P5-3a 완료 대기] F1 OFF/ON 시각 검증 단계.
+[P5-3b 완료 대기] F1 OFF/ON 시각 검증 단계.
 
 적용된 변경 (빌드 성공 2026-05-04):
-  FIREFLY_CLAMP            = 20.0  (5.0 → 4× 완화)
-  luminanceSigmaScale      = 3.0   (2.5 ↔ 3.5 균형)
-  luminanceSensitivity     = 3.0   (3.5 ↔ 2.5 균형)
-  g_luminanceHistogram     = u7 (256-bin log2, F2 캡처 시 histogram_N_*.txt 덤프)
+  PathTracer.hlsl: roughness < 0.05 → effectiveSpecHitDist = min(rawHitT, viewZ * 2.0)
+  C++ hitDistanceParameters 불변 (HLSL/C++ bit-identical 유지).
 
 다음 단계:
-  1. 앱 실행 (build/ 에서) → 정적 씬 안정화 (~3초 대기).
-  2. F2 → capture_N_raw.png + histogram_N_raw.txt 저장.
-  3. F1 → F2 → capture_N_denoised.png + histogram_N_denoised.txt 저장.
-  4. 시각 검증: puddle 두 highlight 중 최소 하나 visible? 가로등 ground 윤곽 80% 이상?
-  5. histogram_N_*.txt의 99th/99.9th percentile lum 값 확인.
-  6. Exit criteria 충족 → P5-3b 진행.
-     미달 → P5_PBR_RECOVERY.md §4 Decision Log 기록 후 임계 재조정.
+  1. 앱 실행 (build/ 에서) → 정적 씬 안정화 (~3초 대기.
+  2. F1 ON → F2 → capture_N_denoised.png 캡처.
+  3. 시각 검증: puddle 두 highlight 모두 visible? 일반 표면 noise 회귀 없음?
+  4. Exit criteria 충족 → 커밋 후 P5-3c 진행.
+     미달 → P5_PBR_RECOVERY.md §4 Decision Log 기록.
 
-Exit criteria (P5-3a):
-  - puddle 두 spherical reflection 중 최소 하나 visible
-  - 가로등 ground occlusion 윤곽이 OFF의 80% 이상 유지
-  - firefly 재발 없음
+Exit criteria (P5-3b):
+  - puddle 두 spherical reflection 모두 visible
+  - 일반 표면(벽/바닥) noise 회귀 없음
 ```
 
 ---
@@ -342,6 +337,9 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-04 | Claude Code | P5-3b | roughness<0.05 specular hitT 분리 packing. PathTracer.hlsl에
+effectiveSpecHitDist = min(rawHitT, viewZ*2.0) 분기 추가. C++ hitDistanceParameters 불변.
+빌드 성공 (Debug ALL_BUILD). 사용자 시각 검증 대기 — puddle 두 highlight / noise 회귀.
 2026-05-04 | Claude Code | P5-3a | FIREFLY_CLAMP 5.0→20.0, sigma/sensitivity 3.5/2.5→3.0/3.0 적용.
 PathTracer.hlsl에 256-bin log2 luminance histogram (u7 RWStructuredBuffer, pre-clamp
 InterlockedAdd) 추가. context.cpp: 매 프레임 UAV clear, F2 캡처 시 histogram_N_*.txt
