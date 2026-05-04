@@ -66,11 +66,11 @@ Phase 5 - REBLUR quality tuning (진행 중)
 
 | Item | Value |
 | --- | --- |
-| Hash | `558d730` |
+| Hash | `f525c59` |
 | Author | choi mun chan |
-| Date | 2026-05-02 |
-| Scope | `P5` docs — update diagnosis §6 settings and §8 task status, STATUS next action |
-| Summary | REBLUR prepass=6/max=9 blur-radius sweep 채택 완료. 체커 plane baseline 확보 (sidewalk 박스 제거, 타일 2m, 대비 0.18/0.72). P5-3 firefly suppression 작업 시작 (미커밋 상태). |
+| Date | 2026-05-04 |
+| Scope | `P5-3c` metrics PASS + PBR recovery campaign 종료 |
+| Summary | avg31 clamped raw vs denoised exposure_matched_ssim=0.9557 (기준 0.93 PASS). tools/p5_3c_capture.ps1, tools/p5_3c_metrics.py 추가. P5_PBR_RECOVERY.md 삭제 (§6 closure criteria 충족). |
 
 ---
 
