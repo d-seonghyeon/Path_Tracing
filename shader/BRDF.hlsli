@@ -6,6 +6,9 @@
 #define PI 3.14159265359f
 #endif
 
+Texture2D<float2> g_energyLUT : register(t11);
+SamplerState     g_energyLUTSamp : register(s1);
+
 // -------------------------------------------------------
 // 유틸리티
 // -------------------------------------------------------
@@ -61,32 +64,66 @@ float3 FresnelSchlick(float cosTheta, float3 F0) {
 }
 
 // -------------------------------------------------------
-// 4-a. GGX 중요도 샘플링 (Specular lobe)
+// 4-a. VNDF (Specular lobe)
 // -------------------------------------------------------
-float3 ImportanceSampleGGX(float2 xi, float3 N, float roughness) {
-    float a   = roughness * roughness;   // alpha
-    float phi = 2.0f * PI * xi.x;
-    float cosTheta = sqrt((1.0f - xi.y) / (1.0f + (a * a - 1.0f) * xi.y));
-    float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
+// 기존 ImportanceSampleGGX 삭제하고 이걸로 교체
+float3 ImportanceSampleVNDF(float2 xi, float3 N, float3 V, float roughness) {
+    float a = roughness * roughness;
 
-    float3 H;
-    H.x = cos(phi) * sinTheta;
-    H.y = sin(phi) * sinTheta;
-    H.z = cosTheta;
-
+    // 접선 프레임
     float3 up        = abs(N.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
     float3 tangent   = normalize(cross(up, N));
     float3 bitangent = cross(N, tangent);
-    return normalize(tangent * H.x + bitangent * H.y + N * H.z);
+
+    // V를 탄젠트 공간으로
+    float3 Vlocal = float3(
+        dot(V, tangent),
+        dot(V, bitangent),
+        dot(V, N)
+    );
+
+    // 1. 뷰 방향을 반구로 변환 (스트레칭)
+    float3 Vh = normalize(float3(a * Vlocal.x, a * Vlocal.y, Vlocal.z));
+
+    // 2. Vh 기준 접선 프레임
+    float  lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1    = lensq > 0.0f
+        ? float3(-Vh.y, Vh.x, 0.0f) / sqrt(lensq)
+        : float3(1, 0, 0);
+    float3 T2 = cross(Vh, T1);
+
+    // 3. 균일 디스크 샘플 → 반구 샘플
+    float r   = sqrt(xi.x);
+    float phi = 2.0f * PI * xi.y;
+    float t1  = r * cos(phi);
+    float t2  = r * sin(phi);
+    float s   = 0.5f * (1.0f + Vh.z);
+    t2 = (1.0f - s) * sqrt(1.0f - t1 * t1) + s * t2;
+
+    // 4. 법선 방향 계산
+    float3 Nh = t1 * T1 + t2 * T2
+              + sqrt(max(0.0f, 1.0f - t1*t1 - t2*t2)) * Vh;
+
+    // 5. 타원체 → 원래 공간으로 (언스트레칭)
+    float3 Hlocal = normalize(float3(a * Nh.x, a * Nh.y, max(0.0f, Nh.z)));
+
+    // 접선 공간 → 월드 공간
+    return normalize(tangent * Hlocal.x + bitangent * Hlocal.y + N * Hlocal.z);
 }
 
-// Specular PDF: D(H)*NdotH / (4*VdotH)
+// p(L) = D(H) * G1(V) / (4 * NdotV)
 float ComputeSpecularPDF(float3 N, float3 V, float3 L, float roughness) {
     float3 H     = normalize(V + L);
-    float  NDF   = DistributionGGX(N, H, roughness);
+    float  NdotV = max(dot(N, V), 0.0f);
     float  NdotH = max(dot(N, H), 0.0f);
     float  VdotH = max(dot(V, H), 0.0f);
-    return (NDF * NdotH) / (4.0f * VdotH + 0.0001f);
+
+    float D = DistributionGGX(N, H, roughness);
+
+    // BRDF와 동일한 G1 함수 사용
+    float G1 = GeometrySchlickGGX(NdotV, roughness);
+
+    return D * G1 / (4.0f * NdotV + 0.0001f);
 }
 
 // -------------------------------------------------------
@@ -111,6 +148,12 @@ float3 SampleCosineHemisphere(float2 xi, float3 N) {
 // Diffuse PDF: cos(θ) / π
 float CosineHemispherePDF(float NdotL) {
     return max(NdotL, 0.0f) / PI;
+}
+
+// E(NdotV, roughness) 조회, 샘플링 함수
+float2 SampleEnergyLUT(float NdotV, float roughness) {
+    return g_energyLUT.SampleLevel(
+        g_energyLUTSamp, float2(NdotV, roughness), 0).rg;
 }
 
 // -------------------------------------------------------
@@ -174,11 +217,36 @@ BRDFResult EvaluateBRDF(float3 N, float3 V, float3 L, float3 albedo,
     float  G  = GeometrySmith(N, V, L, roughness);
     float  D  = DistributionGGX(N, H, roughness);
 
+    // 단일산란 specular
     float3 specular = (D * G * F) / (4.0f * NdotV * NdotL + 0.0001f);
-    float3 kD       = (1.0f - F) * (1.0f - metallic);
-    float3 diffuse  = kD * albedo / PI;
 
-    res.value = (diffuse + specular) * NdotL;
+    // Diffuse
+    float3 kD      = (1.0f - F) * (1.0f - metallic);
+    float3 diffuse = kD * albedo / PI;
+
+    // -------------------------------------------------------
+    // Kulla-Conty 다중산란 보상
+    // -------------------------------------------------------
+    float2 lutO = SampleEnergyLUT(NdotV, roughness);
+    float2 lutI = SampleEnergyLUT(NdotL, roughness);
+    float  Eo   = lutO.r;                // 출사 방향 단일산란 에너지
+    float  Ei   = lutI.r;                // 입사 방향 단일산란 에너지
+    float  Eavg = lutO.g;                // 전 방향 평균 에너지 (roughness만의 함수)
+
+    // 손실 에너지 분포
+    float  fms = (1.0f - Eo) * (1.0f - Ei)
+               / max(PI * (1.0f - Eavg), 1e-6f);
+
+    // 다중산란 평균 Fresnel
+    float3 Favg         = F0 + (1.0f - F0) / 21.0f;
+    float3 Fms          = Favg * Favg * Eavg
+                        / max(1.0f - Favg * (1.0f - Eavg), 1e-6f);
+    float3 multiScatter = fms * Fms;
+    multiScatter = min(multiScatter, float3(1.0f, 1.0f, 1.0f)); 
+    //multiScatter = float3(0.0f, 0.0f, 0.0f); 
+
+
+    res.value = (diffuse + specular + multiScatter) * NdotL;
     res.F     = F;
     return res;
 }

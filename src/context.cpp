@@ -111,6 +111,10 @@ bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
     if (!BuildSceneBuffers(device)) return false;
     m_envMap = EnvMap::Load(device, "hdri/moonless_golf_4k.hdr");
 
+    // multiscatter lut
+    m_energyLUT = EnergyLUT::Create(device);
+    if (!m_energyLUT) return false;
+
 
     // 7. 출력 텍스처 생성
     OnResize(device, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -341,11 +345,15 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         };
         context->CSSetShaderResources(0, 10, srvs);
 
-        // s0: 환경맵 샘플러
-        ID3D11SamplerState* samplers[1] = {
-            hasEnv ? m_envMap->GetSampler() : nullptr
+        ID3D11ShaderResourceView* lutSRV[1] = { m_energyLUT->GetSRV() }; //t11
+        context->CSSetShaderResources(11, 1, lutSRV);
+
+        // 샘플러 s0(환경맵), s1(EnergyLUT)
+        ID3D11SamplerState* samplers[2] = {
+            hasEnv ? m_envMap->GetSampler() : nullptr,
+            m_energyLUT->GetSampler(),
         };
-        context->CSSetSamplers(0, 1, samplers);
+        context->CSSetSamplers(0, 2, samplers);
 
         // u0: HDR 누적 버퍼만 바인딩 (PathTracer는 u1 사용 안 함)
         ID3D11UnorderedAccessView *uavs[1] = { m_accumUAV.Get() };
@@ -359,10 +367,12 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         // PathTracer 리소스 해제
         ID3D11UnorderedAccessView* nullUAV[1] = { nullptr };
         context->CSSetUnorderedAccessViews(0, 1, nullUAV, nullptr);
-        ID3D11ShaderResourceView* nullSRVs[10] = {};
-        context->CSSetShaderResources(0, 10, nullSRVs);
-        ID3D11SamplerState* nullSamplers[1] = { nullptr };
-        context->CSSetSamplers(0, 1, nullSamplers);
+        
+        ID3D11ShaderResourceView* nullLUT[1] = { nullptr };
+        context->CSSetShaderResources(11, 1, nullLUT);
+
+        ID3D11SamplerState* nullSamplers[2] = { nullptr, nullptr };
+        context->CSSetSamplers(0, 2, nullSamplers);
     }
 
     // -------------------------------------------------------

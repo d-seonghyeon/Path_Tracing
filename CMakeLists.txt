@@ -72,6 +72,7 @@ add_executable(${PROJECT_NAME}
     src/bvh.h              src/bvh.cpp
     src/scene_desc.h       src/scene_desc.cpp
     src/EnvMap.h           src/EnvMap.cpp
+    src/EnergyLUT.h    src/EnergyLUT.cpp
     ${SHADER_SOURCES}
 )
 

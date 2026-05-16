@@ -85,6 +85,47 @@ SceneDesc MakeCityScene() {
     matLeafHigh.albedo    = glm::vec3(0.15f, 0.38f, 0.10f);  // 밝은 초록
     matLeafHigh.roughness = 0.85f;
 
+    GpuMaterial matGoldBench{};
+    matGoldBench.albedo    = glm::vec3(0.9f, 0.7f, 0.3f);  // 금빛
+    matGoldBench.roughness = 0.5f;
+    matGoldBench.metallic  = 1.0f;
+
+
+        // 좌석 (얇게)
+    desc.boxes.push_back({
+        {-3.8f, 0.42f, 6.0f},
+        {-2.5f, 0.52f, 8.0f},
+        matGoldBench
+    });
+
+    // 앞쪽 왼쪽 다리
+    desc.boxes.push_back({
+        {-3.75f, 0.0f, 6.1f},
+        {-3.55f, 0.42f, 6.3f},
+        matGoldBench
+    });
+
+    // 앞쪽 오른쪽 다리
+    desc.boxes.push_back({
+        {-2.7f, 0.0f, 6.1f},
+        {-2.5f, 0.42f, 6.3f},
+        matGoldBench
+    });
+
+    // 뒤쪽 왼쪽 다리
+    desc.boxes.push_back({
+        {-3.75f, 0.0f, 7.7f},
+        {-3.55f, 0.42f, 7.9f},
+        matGoldBench
+    });
+
+    // 뒤쪽 오른쪽 다리
+    desc.boxes.push_back({
+        {-2.7f, 0.0f, 7.7f},
+        {-2.5f, 0.42f, 7.9f},
+        matGoldBench
+    });
+
     // -------------------------------------------------------
     // 도로 & 보도
     desc.boxes.push_back({{-4.0f,-0.05f,-10.0f}, { 4.0f, 0.00f, 35.0f}, matRoad});
@@ -98,10 +139,10 @@ SceneDesc MakeCityScene() {
     matChecker.roughness = 0.8f;
 
     desc.quads.push_back({
-        {-4.0f, 0.01f, -10.0f},
-        { 4.0f, 0.01f, -10.0f},
-        { 4.0f, 0.01f, 35.0f},
-        {-4.0f, 0.01f, 35.0f},
+        {-20.0f, 0.01f, -10.0f},
+        { 20.0f, 0.01f, -10.0f},
+        { 20.0f, 0.01f, 35.0f},
+        {-20.0f, 0.01f, 35.0f},
         {0.0f, 1.0f, 0.0f},
         matChecker
     });

@@ -225,7 +225,7 @@ float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
         if (xiLobe < lobe.pSpec) {
             // === Specular Lobe: GGX 중요도 샘플링 ===
             float2 xiSpec = GetRandomSamples(pixelCoord, (uint)bounce, frameCount);
-            float3 H = ImportanceSampleGGX(xiSpec, N, hit.material.roughness);
+            float3 H = ImportanceSampleVNDF(xiSpec, N, V, hit.material.roughness);
             L = reflect(-V, H);
             sampledSpecular = true;
         } else {
@@ -262,7 +262,7 @@ float3 TracePath(Ray ray, uint2 pixelCoord, uint frameCount) {
         if (bounce >= 1) {
             float pSurvive = clamp(
                 max(throughput.r, max(throughput.g, throughput.b)),
-                0.05f, 0.95f);
+                0.05f, 0.75f);
             if (GetRandomFloat(pixelCoord, (uint)bounce + 100u, frameCount) > pSurvive)
                 break;
             throughput /= pSurvive;

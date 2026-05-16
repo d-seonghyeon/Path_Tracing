@@ -11,6 +11,7 @@
 #include "bvh.h"
 #include "scene_desc.h"
 #include "EnvMap.h"
+#include "EnergyLUT.h"
 
 // -------------------------------------------------------
 // GPU 상수 버퍼 - 카메라 파라미터 (PathTracer cbuffer b0)
@@ -95,6 +96,9 @@ private:
 
     // [추가] 환경맵 (HDRI + CDF LUT)
     EnvMapUPtr m_envMap;
+
+    //t11: Kulla-Conty Energy LUT
+    EnergyLUTUPtr m_energyLUT; 
 
 
     // --- Camera State ---
