@@ -11,6 +11,8 @@
 #include "bvh.h"
 #include "scene_desc.h"
 #include "nrd_denoiser.h"
+#include "env_map.h"
+#include "energy_lut.h"
 
 // -------------------------------------------------------
 // GPU ?곸닔 踰꾪띁 - 移대찓???뚮씪誘명꽣 (PathTracer cbuffer b0)
@@ -24,9 +26,14 @@ struct GlobalUniforms {
     float     frameCount;
     glm::vec3 cameraRight;
     uint32_t  lightCount;
+    uint32_t  envWidth;
+    uint32_t  envHeight;
+    uint32_t  hasEnvMap;
+    float     _padB;
     glm::mat4 prevViewProj;
     glm::mat4 currViewProj;
 };
+static_assert(sizeof(GlobalUniforms) % 16 == 0, "GlobalUniforms must stay 16-byte aligned");
 
 CLASS_PTR(Context)
 class Context {
@@ -127,6 +134,10 @@ private:
 
     // ?곸닔 踰꾪띁
     BufferUPtr m_globalBuffer;
+
+    // Phase 6 B-3: optional HDRI resources. PathTracer binding starts in B-4.
+    EnvMapUPtr m_envMap;
+    EnergyLUTUPtr m_energyLUT;
 
     // --- Camera State ---
     glm::vec3 m_cameraPos   { 0.0f, 2.5f, -6.0f };

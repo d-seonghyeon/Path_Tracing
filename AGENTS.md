@@ -59,7 +59,7 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 
 | 바인딩 | 리소스 | 설명 |
 | --- | --- | --- |
-| `b0` | `GlobalUB` | camera, fov, frameCount, lightCount (+ 추후 prev/curr viewProj) |
+| `b0` | `GlobalUB` | camera, fov, frameCount, lightCount, envWidth/envHeight/hasEnvMap, prev/curr viewProj |
 | `t0` | `g_vertices` (SRV, structured) | |
 | `t1` | `g_indices` (SRV, raw/structured) | |
 | `t2` | `g_meshInfos` (SRV) | |
@@ -67,6 +67,12 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 | `t4` | `g_bvhNodes` (SRV) | |
 | `t5` | `g_bvhPrims` (SRV) | |
 | `t6` | `g_lights` (SRV) | |
+| `t7` | `g_envMap` (SRV, `R32G32B32A32_FLOAT`) | HDRI environment map, B-4 |
+| `t8` | `g_envCondCDF` (SRV, `R32_FLOAT`) | environment conditional CDF, B-4 bound / B-5 used |
+| `t9` | `g_envMargCDF` (SRV, `R32_FLOAT`) | environment marginal CDF, B-4 bound / B-5 used |
+| `t11` | `g_energyLUT` (SRV, `R32G32_FLOAT`) | Kulla-Conty energy compensation LUT, C-1 bound / C-3 used |
+| `s0` | `s_envSampler` | environment sampler (Wrap-U / Clamp-V), B-4 |
+| `s1` | `s_energyLUTSampler` | LUT sampler (Linear Clamp), C-1 |
 | `u0` | `g_diffuseRadiance` | `R16G16B16A16_FLOAT` |
 | `u1` | `g_specularRadiance` | `R16G16B16A16_FLOAT` |
 | `u2` | `g_viewZ` | `R32_FLOAT` |

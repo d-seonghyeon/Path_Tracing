@@ -14,9 +14,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebugDLL")
 # 1. 경로 설정
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shader")
 set(MODEL_SRC_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/model")
+set(HDRI_SRC_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/hdri")
 set(OUTPUT_BASE_DIR "${CMAKE_BINARY_DIR}")
 set(OUTPUT_SHADER_DIR "${OUTPUT_BASE_DIR}/shader")
 set(OUTPUT_MODEL_DIR  "${OUTPUT_BASE_DIR}/model")
+set(OUTPUT_HDRI_DIR   "${OUTPUT_BASE_DIR}/hdri")
 
 # 2. 파일 스캔
 file(GLOB_RECURSE SHADER_SOURCES CONFIGURE_DEPENDS
@@ -49,8 +51,10 @@ endforeach()
 add_custom_target(UpdateAssets
     DEPENDS ${ALL_DEST_SHADERS}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_MODEL_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_HDRI_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${MODEL_SRC_DIR}" "${OUTPUT_MODEL_DIR}"
-    COMMENT "Syncing shaders and models..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${HDRI_SRC_DIR}" "${OUTPUT_HDRI_DIR}"
+    COMMENT "Syncing shaders, models, and HDRI assets..."
 )
 
 # 5. 실행 파일 생성
@@ -69,6 +73,8 @@ add_executable(${PROJECT_NAME}
     src/bvh.h              src/bvh.cpp
     src/nrd_denoiser.h     src/nrd_denoiser.cpp
     src/scene_desc.h       src/scene_desc.cpp
+    src/env_map.h          src/env_map.cpp
+    src/energy_lut.h       src/energy_lut.cpp
     ${SHADER_SOURCES}
 )
 

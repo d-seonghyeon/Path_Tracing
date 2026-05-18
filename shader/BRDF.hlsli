@@ -6,6 +6,9 @@
 #define PI 3.14159265359f
 #endif
 
+Texture2D<float2> g_energyLUT : register(t11);
+SamplerState      s_energyLUTSampler : register(s1);
+
 // -------------------------------------------------------
 // 유틸리티
 // -------------------------------------------------------
@@ -75,13 +78,43 @@ float3 ImportanceSampleGGX(float2 xi, float3 N, float roughness) {
     return normalize(tangent * H.x + bitangent * H.y + N * H.z);
 }
 
-// Specular PDF: D(H)*NdotH / (4*VdotH)
+float3 ImportanceSampleVNDF(float2 xi, float3 N, float3 V, float roughness) {
+    float a = roughness * roughness;
+
+    float3 up        = abs(N.z) < 0.999f ? float3(0, 0, 1) : float3(1, 0, 0);
+    float3 tangent   = normalize(cross(up, N));
+    float3 bitangent = cross(N, tangent);
+
+    float3 Vlocal = float3(dot(V, tangent), dot(V, bitangent), dot(V, N));
+    float3 Vh = normalize(float3(a * Vlocal.x, a * Vlocal.y, Vlocal.z));
+
+    float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1 = lensq > 0.0f
+        ? float3(-Vh.y, Vh.x, 0.0f) / sqrt(lensq)
+        : float3(1, 0, 0);
+    float3 T2 = cross(Vh, T1);
+
+    float r = sqrt(xi.x);
+    float phi = 2.0f * PI * xi.y;
+    float t1 = r * cos(phi);
+    float t2 = r * sin(phi);
+    float s = 0.5f * (1.0f + Vh.z);
+    t2 = (1.0f - s) * sqrt(max(0.0f, 1.0f - t1 * t1)) + s * t2;
+
+    float3 Nh = t1 * T1 + t2 * T2
+              + sqrt(max(0.0f, 1.0f - t1 * t1 - t2 * t2)) * Vh;
+
+    float3 Hlocal = normalize(float3(a * Nh.x, a * Nh.y, max(0.0f, Nh.z)));
+    return normalize(tangent * Hlocal.x + bitangent * Hlocal.y + N * Hlocal.z);
+}
+
+// VNDF PDF: D(H) * G1(V) / (4 * NdotV)
 float ComputeSpecularPDF(float3 N, float3 V, float3 L, float roughness) {
     float3 H     = normalize(V + L);
-    float  NDF   = DistributionGGX(N, H, roughness);
-    float  NdotH = max(dot(N, H), 0.0f);
-    float  VdotH = max(dot(V, H), 0.0f);
-    return (NDF * NdotH) / (4.0f * VdotH + 0.0001f);
+    float  NdotV = max(dot(N, V), 0.0f);
+    float  D     = DistributionGGX(N, H, roughness);
+    float  G1    = GeometrySchlickGGX(NdotV, roughness);
+    return D * G1 / (4.0f * NdotV + 0.0001f);
 }
 
 // -------------------------------------------------------
@@ -144,6 +177,10 @@ float ComputeCombinedPDF(float3 N, float3 V, float3 L, float roughness,
     return lobe.pSpec * pdfSpec + lobe.pDiff * pdfDiff;
 }
 
+float2 SampleEnergyLUT(float NdotV, float roughness) {
+    return g_energyLUT.SampleLevel(s_energyLUTSampler, float2(NdotV, roughness), 0).rg;
+}
+
 // -------------------------------------------------------
 // 7. Full BRDF 평가 (diffuse + specular)
 //    lobe selection과 무관하게 전체 BRDF를 반환
@@ -173,7 +210,21 @@ BRDFResult EvaluateBRDF(float3 N, float3 V, float3 L, float3 albedo,
     float3 kD       = (1.0f - F) * (1.0f - metallic);
     float3 diffuse  = kD * albedo / PI;
 
-    res.value = (diffuse + specular) * NdotL;
+    float2 lutO = SampleEnergyLUT(NdotV, roughness);
+    float2 lutI = SampleEnergyLUT(NdotL, roughness);
+    float  Eo   = lutO.r;
+    float  Ei   = lutI.r;
+    float  Eavg = lutO.g;
+
+    float  fms = (1.0f - Eo) * (1.0f - Ei)
+               / max(PI * (1.0f - Eavg), 1e-6f);
+
+    float3 Favg = F0 + (1.0f - F0) / 21.0f;
+    float3 Fms  = Favg * Favg * Eavg
+                / max(1.0f - Favg * (1.0f - Eavg), 1e-6f);
+    float3 multiScatter = min(fms * Fms, float3(1.0f, 1.0f, 1.0f));
+
+    res.value = (diffuse + specular + multiScatter) * NdotL;
     res.F     = F;
     return res;
 }

@@ -123,6 +123,11 @@ bool Context::Init(ID3D11Device *device, ID3D11DeviceContext *context) {
     // 7. ??甕곌쑵????슢諭?
     if (!BuildSceneBuffers(device)) return false;
 
+    // Phase 6 B-3: load optional HDRI resources without binding them yet.
+    m_envMap = EnvMap::Load(device, "hdri/moonless_golf_4k.hdr");
+    m_energyLUT = EnergyLUT::Create(device);
+    if (!m_energyLUT) return false;
+
     // 8. ?곗뮆????용뮞筌???밴쉐
     OnResize(device, WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -484,6 +489,10 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         globalData.frameCount  = (float)m_frameCount;
         globalData.cameraRight = right;
         globalData.lightCount  = m_lightCount;
+        globalData.envWidth    = (m_envMap && m_envMap->IsLoaded()) ? (uint32_t)m_envMap->GetWidth() : 0u;
+        globalData.envHeight   = (m_envMap && m_envMap->IsLoaded()) ? (uint32_t)m_envMap->GetHeight() : 0u;
+        globalData.hasEnvMap   = (m_envMap && m_envMap->IsLoaded()) ? 1u : 0u;
+        globalData._padB       = 0.0f;
         globalData.prevViewProj = glm::transpose(prevViewProj);
         globalData.currViewProj = glm::transpose(currViewProj);
         m_globalBuffer->UpdateData(context, globalData);
@@ -492,8 +501,8 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         auto gBuf = m_globalBuffer->GetBuffer();
         context->CSSetConstantBuffers(0, 1, &gBuf);
 
-        // t0~t6: ???怨쀬뵠??SRV
-        ID3D11ShaderResourceView *srvs[7] = {
+        // t0~t9: scene SRVs + optional HDRI resources.
+        ID3D11ShaderResourceView *srvs[10] = {
             m_vertexSRV.Get(),
             m_indexSRV.Get(),
             m_meshInfoSRV.Get(),
@@ -501,8 +510,22 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
             m_bvhNodeSRV.Get(),
             m_bvhPrimSRV.Get(),
             m_lightSRV.Get(),
+            m_envMap ? m_envMap->GetEnvSRV() : nullptr,
+            m_envMap ? m_envMap->GetCondCDFSRV() : nullptr,
+            m_envMap ? m_envMap->GetMargCDFSRV() : nullptr,
         };
-        context->CSSetShaderResources(0, 7, srvs);
+        context->CSSetShaderResources(0, 10, srvs);
+
+        ID3D11ShaderResourceView *lutSRV[1] = {
+            m_energyLUT ? m_energyLUT->GetSRV() : nullptr,
+        };
+        context->CSSetShaderResources(11, 1, lutSRV);
+
+        ID3D11SamplerState *samplers[2] = {
+            m_envMap ? m_envMap->GetSampler() : nullptr,
+            m_energyLUT ? m_energyLUT->GetSampler() : nullptr,
+        };
+        context->CSSetSamplers(0, 2, samplers);
 
         // P5-3a: clear histogram before PathTracer so each frame starts fresh
         UINT histClear[4] = {0, 0, 0, 0};
@@ -528,8 +551,12 @@ void Context::Render(ID3D11DeviceContext *context, uint32_t width, uint32_t heig
         // PathTracer ?귐딅꺖????곸젫
         ID3D11UnorderedAccessView *nullUAV[8] = {};
         context->CSSetUnorderedAccessViews(0, 8, nullUAV, nullptr);
-        ID3D11ShaderResourceView *nullSRVs[7] = {};
-        context->CSSetShaderResources(0, 7, nullSRVs);
+        ID3D11ShaderResourceView *nullSRVs[10] = {};
+        context->CSSetShaderResources(0, 10, nullSRVs);
+        ID3D11ShaderResourceView *nullLUT[1] = {};
+        context->CSSetShaderResources(11, 1, nullLUT);
+        ID3D11SamplerState *nullSamplers[2] = {};
+        context->CSSetSamplers(0, 2, nullSamplers);
     }
 
     // -------------------------------------------------------
