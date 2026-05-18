@@ -92,11 +92,11 @@ C-3 Kulla-Conty MS 보정 완료. 빌드/F1 OFF/ON 캡처 통과.
 C-4 FIREFLY_CLAMP 재검증 완료. `FIREFLY_CLAMP=20.0` 유지 결정. Phase C(BRDF) 완료.
 다음 단일 액션:
 
-  D-0 exposure 측정
-    1. C-4 직후 기본 + 3 추가 시점 F1 OFF/ON 캡처
-    2. LDR mean, 채널별 평균, 클립 빈도, P4-5 distribution shift 재현 여부 측정
-    3. 측정 결과를 바탕으로 D-1에서 emissive/ToneMap 옵션 사용자 선택
-    상세: MERGE_STATUS.md §2 / P6_CAP_MERGE.md §D-0
+  D option branch compare
+    - Current branch `phase6-d-tonemap`: keep emissive values and apply common ToneMap exposure 0.82.
+    - Compare against `phase6-d-emissive`: cap_sharing emissive values with ACES exposure 1.0.
+    - Capture F1 OFF/ON on both branches and pick final D policy.
+    상세: MERGE_STATUS.md §4 / P6_CAP_MERGE.md §D
 ```
 
 ---
@@ -350,6 +350,9 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-18 | Codex       | P6 D-option A | Branch `phase6-d-tonemap`.
+Keep current emissive values and apply a shared ToneMap exposure scalar `TONE_MAP_EXPOSURE=0.82`.
+Raw and denoised still use identical ToneMap, so P4-6 policy is preserved.
 2026-05-18 | Codex       | P6 C-4 | FIREFLY_CLAMP 재검증 완료. C-3 이후 F1 OFF 30초 정착
 raw 캡처 `build/c4_firefly_raw.png` 및 `build/c4_firefly_histogram.txt` 생성. stdout histogram:
 99th=2.36, 99.9th=4.66, stderr 비어 있음. 시각 확인상 새 firefly 패턴/폭주 없음.
