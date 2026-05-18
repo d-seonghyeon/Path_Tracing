@@ -74,6 +74,7 @@ DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-
 | `u4` | `g_motionVector` | `R16G16_FLOAT` |
 | `u5` | `g_baseColorMetalness` | `R8G8B8A8_UNORM` |
 | `u6` | `g_emissive` | `R11G11B10_FLOAT` |
+| `u7` | `g_luminanceHistogram` (RWStructuredBuffer<uint>) | 256-bin log2 휘도 히스토그램, 매 프레임 클리어. P5-3a 추가. F2 캡처 시 readback. |
 
 ### NRD Denoise (stub now, DX11 backend later)
 

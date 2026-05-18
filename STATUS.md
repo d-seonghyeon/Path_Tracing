@@ -79,21 +79,17 @@ Phase 5 - REBLUR quality tuning (진행 중)
 Do exactly one next action, not a vague "continue".
 
 ```
-[P5-3c PASS — 커밋 대기]
+[Phase 6 — B-0 시작 가능]
 
-P5-3a/b/c 모두 완료. 미커밋 변경 커밋 준비.
+P5-3a/b/c 완료 커밋 완료. working tree 깨끗함.
+Phase 6 (cap_sharing 병합) 진행 중. 다음 단일 액션:
 
-커밋 대상:
-  shader/PathTracer.hlsl  — FIREFLY_CLAMP 20.0, 256-bin histogram, roughness<0.05 hitT 클램프
-  src/context.h           — m_histogramBuffer / m_histogramUAV 선언
-  src/context.cpp         — UAV clear, 8-slot bind, histogram readback (F2 캡처 시)
-  src/nrd_denoiser.cpp    — antilag sigma/sensitivity 3.0/3.0
-  tools/p5_3c_capture.ps1 — 자동 캡처 스크립트
-  tools/p5_3c_metrics.py  — SSIM/PSNR 계산 스크립트
-  STATUS.md / (P5_PBR_RECOVERY.md 삭제)
-
-커밋 메시지 후보:
-  P5-3a/b/c: firefly clamp 20.0 + specular hitT fix + metrics PASS
+  B-0 사전 검증
+    1. git status 깨끗한지 확인 ✅
+    2. F1 OFF / F1 ON 베이스라인 캡처 2장
+       → build/b0_baseline_raw.png, build/b0_baseline_denoised.png
+    3. Scene.hlsli L98~108, L560~584 함수 본체 view (잔여 미확정 2건)
+    상세: MERGE_STATUS.md §2 / P6_CAP_MERGE.md §B-0
 ```
 
 ---
