@@ -5,6 +5,28 @@
 
 ---
 
+## 0. Latest Handoff Snapshot (2026-05-19)
+
+Start here for the next session. D option branches are already created,
+built, captured, and committed.
+
+- Common B/C baseline: `phase6-bc-integrated` @ `8cac6ab`.
+- Option A: `phase6-d-tonemap` @ `41be61a`.
+  - Keeps current NRD repo emissive values.
+  - Applies shared ToneMap exposure `0.82` to both raw and denoised paths.
+  - Captures: `build/d_tonemap_raw.png`, `build/d_tonemap_denoised.png`.
+  - Metrics: raw luma `0.4404`, raw clip `0.0375`; denoised luma `0.5016`, denoised clip `0.0346`.
+- Option B: `phase6-d-emissive` @ `8abb988` before this handoff commit.
+  - Uses local `cap_sharing_for_upload` emissive values.
+  - Keeps ACES exposure `1.0`.
+  - Captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
+  - Metrics: raw luma `0.3192`, raw clip `0.0000`; denoised luma `0.3584`, denoised clip `0.0000`.
+- Important correction: local cap_sharing emissive values are lower than this NRD repo's current emissive values. Ignore older notes that say cap_sharing is "x3-5 stronger" for this comparison.
+- Recommended D-1 choice: `phase6-d-tonemap`, unless the user specifically wants the much darker cap_sharing-original night look.
+- Next single action: decide D-1, then continue from the chosen branch.
+
+---
+
 ## 0. 한 줄 요약
 
 **cap_sharing 프로젝트의 렌더 품질 기능(HDRI 환경맵 + VNDF + Kulla-Conty MS)을 NRD 통합 레포로 이식하는 작업의 Phase 6.** 진단(A)은 완료, 본 작업(B → C → D → E)이 남았다.

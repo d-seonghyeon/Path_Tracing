@@ -5,6 +5,31 @@
 
 ---
 
+## 0. Latest Handoff Snapshot (2026-05-19)
+
+This block is the current source of truth for the next session. Older Phase 6
+sections below may still say "D-0 start possible" or `master`; treat those as
+historical notes.
+
+- Active phase: `Phase 6 - cap_sharing merge`
+- Detailed sub-phase: `D option branches complete - waiting for D-1 user choice`
+- Blocked: `Yes - choose final exposure/emissive policy`
+- Current branch at handoff: `phase6-d-emissive`
+- Common baseline: `phase6-bc-integrated` @ `8cac6ab`
+- Option A branch: `phase6-d-tonemap` @ `41be61a`
+  - Change: current NRD repo emissive values, shared ToneMap exposure `0.82`.
+  - Captures: `build/d_tonemap_raw.png`, `build/d_tonemap_denoised.png`.
+  - Metrics: raw luma `0.4404`, raw clip `0.0375`; denoised luma `0.5016`, denoised clip `0.0346`.
+- Option B branch: `phase6-d-emissive` @ `8abb988` before this handoff commit
+  - Change: local `cap_sharing_for_upload` emissive values, ACES exposure `1.0`.
+  - Captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
+  - Metrics: raw luma `0.3192`, raw clip `0.0000`; denoised luma `0.3584`, denoised clip `0.0000`.
+- Important correction: local `cap_sharing_for_upload` emissive values are lower than this NRD repo's current city emissives. Earlier notes saying "cap_sharing x3-5 stronger" are stale for this local comparison.
+- Recommendation: pick `phase6-d-tonemap` unless the user explicitly wants the much darker cap_sharing-original night look.
+- Next single action: ask/decide D-1 final policy, then merge or continue from the selected branch.
+
+---
+
 ## 0. Current Phase
 
 - Active phase: `Phase 6 - cap_sharing merge`

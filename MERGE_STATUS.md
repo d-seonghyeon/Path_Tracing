@@ -6,6 +6,26 @@
 
 ---
 
+## 0. Latest Handoff Snapshot (2026-05-19)
+
+D option branching is complete. The next session should not redo D-0 captures
+unless the user wants more viewpoints.
+
+- Common B/C baseline: `phase6-bc-integrated` @ `8cac6ab`.
+- Option A: `phase6-d-tonemap` @ `41be61a`.
+  - Policy: keep current NRD repo emissive values; apply shared ToneMap exposure `0.82` to raw and denoised paths.
+  - Captures: `build/d_tonemap_raw.png`, `build/d_tonemap_denoised.png`.
+  - Metrics: raw luma `0.4404`, clip `0.0375`; denoised luma `0.5016`, clip `0.0346`.
+- Option B: `phase6-d-emissive` @ `8abb988` before this handoff commit.
+  - Policy: use local `cap_sharing_for_upload` emissive values; keep ACES exposure `1.0`.
+  - Captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
+  - Metrics: raw luma `0.3192`, clip `0.0000`; denoised luma `0.3584`, clip `0.0000`.
+- Correction: local cap_sharing emissive values are lower than current NRD repo values. Older "x3-5 stronger" wording is stale.
+- Recommended D-1 choice: `phase6-d-tonemap`, because it preserves the current lighting intent while reducing clipping with an identical raw/denoised ToneMap policy.
+- Next single action: D-1 user choice, then make the selected branch the final Phase D path.
+
+---
+
 ## 1. 현재 단계
 
 ```
