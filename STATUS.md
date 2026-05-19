@@ -5,6 +5,30 @@
 
 ---
 
+## 0. Latest Handoff Snapshot (2026-05-19)
+
+This block is the current source of truth for the next session. Older Phase 6
+sections below may still say "D-0 start possible" or `master`; treat those as
+historical notes.
+
+- Active phase: `Phase 6 - cap_sharing merge`
+- Detailed sub-phase: `D-1/D-2 selected - final policy is phase6-d-tonemap`
+- Blocked: `No`
+- Current branch: `phase6-d-tonemap`
+- Common baseline: `phase6-bc-integrated` @ `8cac6ab`
+- Selected D policy: keep current NRD repo emissive values and apply shared
+  `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`.
+- Raw and denoised paths still use identical ToneMap code, preserving the P4-6
+  validation policy.
+- Rejected-by-default comparison branch: `phase6-d-emissive` @ `8abb988`
+  (local cap_sharing emissives + ACES exposure 1.0). Use it only if the user
+  explicitly asks for the much darker cap_sharing-original night look.
+- Verification: Debug `ALL_BUILD` passed, and a 6s hidden runtime smoke test
+  initialized NRD, HDRI, EnergyLUT, and the procedural scene with empty stderr.
+- Next single action: cross-tool review of the final Phase 6 diff, then merge.
+
+---
+
 ## 0. Current Phase
 
 - Active phase: `Phase 6 - cap_sharing merge`
@@ -66,17 +90,20 @@ Phase 5 - REBLUR quality tuning (진행 중)
 
 | Item | Value |
 | --- | --- |
-| Hash | `f525c59` |
+| Hash | `HEAD (this commit; see git log)` |
 | Author | choi mun chan |
-| Date | 2026-05-04 |
-| Scope | `P5-3c` metrics PASS + PBR recovery campaign 종료 |
-| Summary | avg31 clamped raw vs denoised exposure_matched_ssim=0.9557 (기준 0.93 PASS). tools/p5_3c_capture.ps1, tools/p5_3c_metrics.py 추가. P5_PBR_RECOVERY.md 삭제 (§6 closure criteria 충족). |
+| Date | 2026-05-19 |
+| Scope | `P6-D` shared ToneMap exposure selected |
+| Summary | `shader/Tonemap.hlsl` applies `TONE_MAP_EXPOSURE=0.82` before ACES. Raw and denoised still share identical ToneMap code. |
 
 ---
 
 ## 2. Next Concrete Action
 
 Do exactly one next action, not a vague "continue".
+
+Current note: the block below is historical. The active next action is
+cross-tool review of `phase6-d-tonemap` final Phase 6 diff, then merge.
 
 ```
 [Phase 6 — D-0 시작 가능]
@@ -128,6 +155,7 @@ C-4 FIREFLY_CLAMP 재검증 완료. `FIREFLY_CLAMP=20.0` 유지 결정. Phase C(
 - Phase 6 C-2: specular sampling switched from NDF GGX to VNDF. `ComputeSpecularPDF` now matches the VNDF sampler using `D * G1(V) / (4 * NdotV)`.
 - Phase 6 C-3: `EvaluateBRDF` includes Kulla-Conty multi-scatter compensation using `SampleEnergyLUT(NdotV, roughness)` and `SampleEnergyLUT(NdotL, roughness)`.
 - Phase 6 C-4: after VNDF + MS, F1 OFF 30s raw validation produced histogram 99th=2.36 / 99.9th=4.66 with no visible new firefly pattern. Keep `FIREFLY_CLAMP=20.0` to preserve P5-3a valid highlight policy.
+- Phase 6 D: final exposure policy is `phase6-d-tonemap`: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`. This applies equally to raw and denoised paths.
 - `P5_PBR_RECOVERY.md` - 임시 진단 문서 (P5-3a/b/c 실행 계획). Phase 5 종료 시 §7 패턴으로 삭제.
 
 ### Important current behavior
@@ -350,6 +378,13 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-19 | Codex       | P6 D-1/D-2 | Selected `phase6-d-tonemap` per handoff recommendation.
+Keep current NRD repo emissive values and shared `TONE_MAP_EXPOSURE=0.82`; do not use
+the darker cap_sharing emissive branch unless explicitly requested. Updated STATUS for
+final Phase D policy and prepared Debug ALL_BUILD verification.
+2026-05-19 | Codex       | P6 verify | Debug ALL_BUILD passed on `phase6-d-tonemap`.
+6s hidden runtime smoke from `build/` initialized NRD backend, procedural city, HDRI
+`moonless_golf_4k.hdr`, and EnergyLUT. stderr was empty.
 2026-05-18 | Codex       | P6 D-option A | Branch `phase6-d-tonemap`.
 Keep current emissive values and apply a shared ToneMap exposure scalar `TONE_MAP_EXPOSURE=0.82`.
 Raw and denoised still use identical ToneMap, so P4-6 policy is preserved.

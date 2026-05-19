@@ -7,6 +7,17 @@
 
 ---
 
+## 0. Phase 6 Addendum (2026-05-19)
+
+- HDRI environment lighting is now part of the fixed binding map: PathTracer owns `t7=g_envMap`, `t8=g_envCondCDF`, `t9=g_envMargCDF`, and `s0=s_envSampler`.
+- Environment NEE uses CDF importance sampling plus BSDF/env MIS. Bounce-0 environment contribution must keep the existing `lobe.pDiff` / `lobe.pSpec` split before NRD packing.
+- Specular sampling uses VNDF. `ImportanceSampleVNDF` and `ComputeSpecularPDF = D * G1(V) / (4 * NdotV)` must stay matched; do not restore the old NDF GGX PDF.
+- Kulla-Conty energy compensation uses `g_energyLUT` at `t11` and `s1`; LUT sample coordinates are `float2(NdotV, roughness)`.
+- Phase D exposure policy is final unless the user explicitly asks otherwise: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`.
+- Do not add a denoised-only exposure multiplier. Any exposure change must apply identically to raw and denoised paths.
+
+---
+
 ## 1. 프로젝트 개요 (한 문단)
 
 DirectX 11 compute-shader 기반 path tracer. 씬은 glTF/OBJ 로드 → SAH 16-bin BVH → CS 로 경로추적. NEE + MIS (Power Heuristic), GGX + 코사인 가중 로브 선택, RR (bounce ≥ 1). 출력은 HDR 누적 버퍼에 매 프레임 합산되고 ACES 톤맵 → R8G8B8A8 LDR 로 `Present`. 현재 목표는 **NVIDIA NRD (ReBLUR_DIFFUSE_SPECULAR) 통합**으로, 매 프레임 누적 모델을 per-frame 모델 + temporal denoise 로 교체하는 것.

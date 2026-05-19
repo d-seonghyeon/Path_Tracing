@@ -6,6 +6,16 @@
 
 ---
 
+## 0. Final D Selection (2026-05-19)
+
+- Selected branch: `phase6-d-tonemap`.
+- Final policy: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES for both raw and denoised paths.
+- Comparison branch `phase6-d-emissive` remains available only for the much darker cap_sharing-original night look.
+- Verification passed: Debug `ALL_BUILD` and a 6s hidden runtime smoke test.
+- Next action: cross-tool review, then merge Phase 6.
+
+---
+
 ## 1. 현재 단계
 
 ```

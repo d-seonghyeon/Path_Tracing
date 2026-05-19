@@ -5,6 +5,16 @@
 
 ---
 
+## 0. Final D Selection (2026-05-19)
+
+- Selected branch: `phase6-d-tonemap`.
+- Final policy: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES for both raw and denoised paths.
+- Do not switch to `phase6-d-emissive` unless the user explicitly asks for the much darker cap_sharing-original night look.
+- Verification passed: Debug `ALL_BUILD` and a 6s hidden runtime smoke test.
+- Next action: cross-tool review, then merge Phase 6.
+
+---
+
 ## 0. 한 줄 요약
 
 **cap_sharing 프로젝트의 렌더 품질 기능(HDRI 환경맵 + VNDF + Kulla-Conty MS)을 NRD 통합 레포로 이식하는 작업의 Phase 6.** 진단(A)은 완료, 본 작업(B → C → D → E)이 남았다.
