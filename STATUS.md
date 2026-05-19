@@ -12,21 +12,19 @@ sections below may still say "D-0 start possible" or `master`; treat those as
 historical notes.
 
 - Active phase: `Phase 6 - cap_sharing merge`
-- Detailed sub-phase: `D option branches complete - waiting for D-1 user choice`
-- Blocked: `Yes - choose final exposure/emissive policy`
-- Current branch at handoff: `phase6-d-emissive`
-- Common baseline: `phase6-bc-integrated` @ `8cac6ab`
-- Option A branch: `phase6-d-tonemap` @ `41be61a`
-  - Change: current NRD repo emissive values, shared ToneMap exposure `0.82`.
-  - Captures: `build/d_tonemap_raw.png`, `build/d_tonemap_denoised.png`.
-  - Metrics: raw luma `0.4404`, raw clip `0.0375`; denoised luma `0.5016`, denoised clip `0.0346`.
-- Option B branch: `phase6-d-emissive` @ `8abb988` before this handoff commit
-  - Change: local `cap_sharing_for_upload` emissive values, ACES exposure `1.0`.
-  - Captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
-  - Metrics: raw luma `0.3192`, raw clip `0.0000`; denoised luma `0.3584`, denoised clip `0.0000`.
-- Important correction: local `cap_sharing_for_upload` emissive values are lower than this NRD repo's current city emissives. Earlier notes saying "cap_sharing x3-5 stronger" are stale for this local comparison.
-- Recommendation: pick `phase6-d-tonemap` unless the user explicitly wants the much darker cap_sharing-original night look.
-- Next single action: ask/decide D-1 final policy, then merge or continue from the selected branch.
+- Detailed sub-phase: `emissive branch continuation after master merge`
+- Blocked: `No`
+- Current branch: `phase6-d-emissive`
+- `master` now contains the selected `phase6-d-tonemap` path.
+- Purpose: continue the darker cap_sharing-original emissive direction requested by the user.
+- Policy on this branch: local `cap_sharing_for_upload` emissive values in `src/scene_desc.cpp` and shared ToneMap exposure `1.0`.
+- Previous emissive captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
+- Previous emissive metrics: raw luma `0.3192`, clip `0.0000`; denoised luma `0.3584`, clip `0.0000`.
+- Verification: Debug `ALL_BUILD` passed, and a 6s hidden runtime smoke test
+  initialized NRD, HDRI, EnergyLUT, and the procedural scene with empty stderr.
+- Post-merge recapture: `build/capture_0_raw.png`, `build/capture_1_denoised.png`.
+  Metrics: raw luma `0.3189`, clip `0.0000`; denoised luma `0.3582`, clip `0.0000`.
+- Next single action: decide whether to keep iterating on the darker emissive look or stop at this comparison branch.
 
 ---
 
@@ -91,17 +89,20 @@ Phase 5 - REBLUR quality tuning (진행 중)
 
 | Item | Value |
 | --- | --- |
-| Hash | `f525c59` |
+| Hash | `HEAD (this commit; see git log)` |
 | Author | choi mun chan |
-| Date | 2026-05-04 |
-| Scope | `P5-3c` metrics PASS + PBR recovery campaign 종료 |
-| Summary | avg31 clamped raw vs denoised exposure_matched_ssim=0.9557 (기준 0.93 PASS). tools/p5_3c_capture.ps1, tools/p5_3c_metrics.py 추가. P5_PBR_RECOVERY.md 삭제 (§6 closure criteria 충족). |
+| Date | 2026-05-19 |
+| Scope | `P6-D` shared ToneMap exposure selected |
+| Summary | `shader/Tonemap.hlsl` applies `TONE_MAP_EXPOSURE=0.82` before ACES. Raw and denoised still share identical ToneMap code. |
 
 ---
 
 ## 2. Next Concrete Action
 
 Do exactly one next action, not a vague "continue".
+
+Current note: the block below is historical. The active next action is
+cross-tool review of `phase6-d-tonemap` final Phase 6 diff, then merge.
 
 ```
 [Phase 6 — D-0 시작 가능]
@@ -153,6 +154,7 @@ C-4 FIREFLY_CLAMP 재검증 완료. `FIREFLY_CLAMP=20.0` 유지 결정. Phase C(
 - Phase 6 C-2: specular sampling switched from NDF GGX to VNDF. `ComputeSpecularPDF` now matches the VNDF sampler using `D * G1(V) / (4 * NdotV)`.
 - Phase 6 C-3: `EvaluateBRDF` includes Kulla-Conty multi-scatter compensation using `SampleEnergyLUT(NdotV, roughness)` and `SampleEnergyLUT(NdotL, roughness)`.
 - Phase 6 C-4: after VNDF + MS, F1 OFF 30s raw validation produced histogram 99th=2.36 / 99.9th=4.66 with no visible new firefly pattern. Keep `FIREFLY_CLAMP=20.0` to preserve P5-3a valid highlight policy.
+- Phase 6 D: final exposure policy is `phase6-d-tonemap`: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`. This applies equally to raw and denoised paths.
 - `P5_PBR_RECOVERY.md` - 임시 진단 문서 (P5-3a/b/c 실행 계획). Phase 5 종료 시 §7 패턴으로 삭제.
 
 ### Important current behavior
@@ -375,9 +377,24 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-19 | Codex       | P6 emissive | Merged updated `master` into `phase6-d-emissive`
+after `phase6-d-tonemap` landed on master. Continuing the user-requested darker emissive branch
+with local cap_sharing emissive values and ToneMap exposure 1.0. Debug ALL_BUILD passed; 6s hidden
+runtime smoke initialized NRD/HDRI/EnergyLUT with empty stderr. Recaptured `build/capture_0_raw.png`
+and `build/capture_1_denoised.png`; metrics raw luma 0.3189 / clip 0.0000, denoised luma 0.3582 / clip 0.0000.
 2026-05-18 | Codex       | P6 D-option B | Branch `phase6-d-emissive`.
 Use local `cap_sharing_for_upload` emissive values in `src/scene_desc.cpp` while keeping ACES exposure 1.0.
 Note: local cap_sharing values are lower than current NRD repo values, despite earlier handoff wording saying cap_sharing was ×3-5 stronger.
+2026-05-19 | Codex       | P6 D-1/D-2 | Selected `phase6-d-tonemap` per handoff recommendation.
+Keep current NRD repo emissive values and shared `TONE_MAP_EXPOSURE=0.82`; do not use
+the darker cap_sharing emissive branch unless explicitly requested. Updated STATUS for
+final Phase D policy and prepared Debug ALL_BUILD verification.
+2026-05-19 | Codex       | P6 verify | Debug ALL_BUILD passed on `phase6-d-tonemap`.
+6s hidden runtime smoke from `build/` initialized NRD backend, procedural city, HDRI
+`moonless_golf_4k.hdr`, and EnergyLUT. stderr was empty.
+2026-05-18 | Codex       | P6 D-option A | Branch `phase6-d-tonemap`.
+Keep current emissive values and apply a shared ToneMap exposure scalar `TONE_MAP_EXPOSURE=0.82`.
+Raw and denoised still use identical ToneMap, so P4-6 policy is preserved.
 2026-05-18 | Codex       | P6 C-4 | FIREFLY_CLAMP 재검증 완료. C-3 이후 F1 OFF 30초 정착
 raw 캡처 `build/c4_firefly_raw.png` 및 `build/c4_firefly_histogram.txt` 생성. stdout histogram:
 99th=2.36, 99.9th=4.66, stderr 비어 있음. 시각 확인상 새 firefly 패턴/폭주 없음.
