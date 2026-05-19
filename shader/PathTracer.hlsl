@@ -18,6 +18,10 @@ cbuffer GlobalUB : register(b0) {
     float  g_frameCount;
     float3 g_cameraRight;
     uint   g_lightCount;
+    uint   g_envWidth;
+    uint   g_envHeight;
+    uint   g_hasEnvMap;
+    float  g_padB;
     row_major float4x4 g_prevViewProj;
     row_major float4x4 g_currViewProj;
 };
@@ -43,6 +47,7 @@ static const int   MAX_BOUNCES       = 6;
 static const int   SAMPLES_PER_PIXEL = 1;
 static const float4 REBLUR_HIT_DIST_PARAMS = float4(30.0f, 0.1f, 20.0f, -25.0f);
 static const float NRD_HIT_T_MAX     = 1e16f; // 하늘/미스 센티널
+static const float ENV_LIGHT_HIT_T   = 1e4f;  // environment NEE: intentionally max-blur distant light
 // P5-3a: histogram 측정 기반으로 5.0→20.0 완화. 가로등 NEE 정상 신호 보존 목적.
 static const float FIREFLY_CLAMP     = 20.0f;
 
@@ -154,14 +159,25 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
         SurfaceHit hit;
         if (!SceneIntersect(ray, hit)) {
             // 하늘 히트 — MIS 없음
-            float3 sky = GetSkyColor(ray.direction) * throughput;
-            if (any(sky > 0.0f)) {
-                if (bounce == 0 || !pathTypeSet || !pathIsSpecular) {
-                    result.diffuse  += sky;
-                    if (bounce > 0)
-                        UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, sky, NRD_HIT_T_MAX);
+            float3 skyRadiance = (g_hasEnvMap != 0u && g_envWidth > 0u && g_envHeight > 0u)
+                ? SampleEnvironmentMap(ray.direction)
+                : GetSkyColor(ray.direction);
+            if (bounce == 0) {
+                // Primary sky is not a denoisable surface signal. Route it through emissive so
+                // raw and denoised Composite paths display the same environment background.
+                result.emissive += skyRadiance;
+            } else {
+                if (g_hasEnvMap != 0u && !prevSpecular) {
+                    float envPdfRev = EnvMapPdf(ray.direction, g_envWidth, g_envHeight);
+                    if (envPdfRev > 0.0f)
+                        skyRadiance *= PowerHeuristic(prevBrdfPdf, envPdfRev);
                 }
-                else {
+                float3 sky = skyRadiance * throughput;
+                if (any(sky > 0.0f) && (!pathTypeSet || !pathIsSpecular)) {
+                    result.diffuse  += sky;
+                    UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight, sky, NRD_HIT_T_MAX);
+                }
+                else if (any(sky > 0.0f)) {
                     result.specular += sky;
                     float candidateSpecHitDist = specularFirstHitDist > 0.0f ? specularFirstHitDist : NRD_HIT_T_MAX;
                     UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight, sky, candidateSpecHitDist);
@@ -287,6 +303,55 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
             }
         }
 
+        // Environment-map NEE: CDF importance sampling + MIS against the BSDF PDF.
+        if (g_hasEnvMap != 0u && g_envWidth > 0u && g_envHeight > 0u) {
+            float2 xiEnv = GetRandomSamples(pixelCoord, (uint)(bounce * 10 + 99), frameCount);
+            float envPdf;
+            float3 Lenv = SampleEnvMapDir(xiEnv, g_envWidth, g_envHeight, envPdf);
+            float NdotEnv = dot(N, Lenv);
+            if (NdotEnv > 0.0f && envPdf > 0.0f) {
+                float3 shadowTarget = hit.p + Lenv * ENV_LIGHT_HIT_T;
+                if (!IsOccluded(hit.p + N * 0.005f, shadowTarget)) {
+                    BRDFResult envBrdf = EvaluateBRDF(N, V, Lenv,
+                        hit.material.albedo, hit.material.roughness, hit.material.metallic);
+
+                    if (any(envBrdf.value > 0.0f)) {
+                        float3 Le = SampleEnvironmentMap(Lenv);
+                        float brdfPdf = ComputeCombinedPDF(N, V, Lenv, hit.material.roughness, lobe);
+                        float w = PowerHeuristic(envPdf, brdfPdf);
+                        float3 envContrib = clamp(
+                            envBrdf.value * Le * w / (envPdf + 1e-10f) * throughput,
+                            0.0f, FIREFLY_CLAMP);
+
+                        if (bounce == 0) {
+                            float3 diffuseContrib = envContrib * lobe.pDiff;
+                            float3 specularContrib = envContrib * lobe.pSpec;
+                            result.diffuse += diffuseContrib;
+                            result.specular += specularContrib;
+                            UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight,
+                                                            diffuseContrib, ENV_LIGHT_HIT_T);
+                            UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight,
+                                                            specularContrib, ENV_LIGHT_HIT_T);
+                        } else if (pathTypeSet && pathIsSpecular) {
+                            result.specular += envContrib;
+                            float candidateSpecHitDist = specularFirstHitDist > 0.0f
+                                ? specularFirstHitDist
+                                : ENV_LIGHT_HIT_T;
+                            UpdateRepresentativeHitDistance(specularHitDist, specularHitWeight,
+                                                            envContrib, candidateSpecHitDist);
+                        } else {
+                            result.diffuse += envContrib;
+                            float candidateDiffHitDist = diffuseFirstHitDist > 0.0f
+                                ? diffuseFirstHitDist
+                                : ENV_LIGHT_HIT_T;
+                            UpdateRepresentativeHitDistance(diffuseHitDist, diffuseHitWeight,
+                                                            envContrib, candidateDiffHitDist);
+                        }
+                    }
+                }
+            }
+        }
+
         // -------------------------------------------------------
         // 간접광: Lobe Selection
         // -------------------------------------------------------
@@ -296,7 +361,7 @@ TraceResult TracePath(Ray ray, uint2 pixelCoord, uint frameCount, out float diff
 
         if (xiLobe < lobe.pSpec) {
             float2 xiSpec = GetRandomSamples(pixelCoord, (uint)bounce, frameCount);
-            float3 H = ImportanceSampleGGX(xiSpec, N, hit.material.roughness);
+            float3 H = ImportanceSampleVNDF(xiSpec, N, V, hit.material.roughness);
             L = reflect(-V, H);
             sampledSpecular = true;
         } else {

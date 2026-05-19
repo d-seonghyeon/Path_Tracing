@@ -74,6 +74,85 @@ struct ShaderLight {
 StructuredBuffer<ShaderLight> g_lights : register(t6);
 
 // -------------------------------------------------------
+// Environment map resources (t7~t9, s0)
+// -------------------------------------------------------
+Texture2D<float4> g_envMap     : register(t7);
+Texture2D<float>  g_envCondCDF : register(t8);
+Texture2D<float>  g_envMargCDF : register(t9);
+SamplerState      s_envSampler : register(s0);
+
+float2 DirToEnvUV(float3 dir) {
+    float phi = atan2(dir.z, dir.x);
+    float theta = acos(clamp(dir.y, -1.0f, 1.0f));
+    return float2((phi + PI) / (2.0f * PI), theta / PI);
+}
+
+float3 SampleEnvironmentMap(float3 direction) {
+    float2 uv = DirToEnvUV(normalize(direction));
+    return g_envMap.SampleLevel(s_envSampler, uv, 0).rgb;
+}
+
+int BinarySearchCDF(Texture2D<float> cdf, int row, int size, float xi) {
+    int lo = 0;
+    int hi = size - 1;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (cdf.Load(int3(mid, row, 0)) < xi)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+float EnvMapPixelPdf(int x, int y, uint envW, uint envH) {
+    float rowCdf = g_envMargCDF.Load(int3(0, y, 0));
+    float prevRowCdf = (y > 0) ? g_envMargCDF.Load(int3(0, y - 1, 0)) : 0.0f;
+    float rowProb = max(rowCdf - prevRowCdf, 0.0f);
+
+    float colCdf = g_envCondCDF.Load(int3(x, y, 0));
+    float prevColCdf = (x > 0) ? g_envCondCDF.Load(int3(x - 1, y, 0)) : 0.0f;
+    float colProb = max(colCdf - prevColCdf, 0.0f);
+
+    float theta = PI * ((float)y + 0.5f) / (float)envH;
+    float sinTheta = sin(theta);
+    if (sinTheta < 1e-6f)
+        return 0.0f;
+
+    float pixelProb = rowProb * colProb;
+    float pixelSolidAngle = (2.0f * PI * PI * sinTheta) / ((float)envW * (float)envH);
+    return pixelProb / max(pixelSolidAngle, 1e-10f);
+}
+
+float3 SampleEnvMapDir(float2 xi, uint envW, uint envH, out float pdfOut) {
+    pdfOut = 0.0f;
+    int y = BinarySearchCDF(g_envMargCDF, 0, (int)envH, xi.y);
+    int x = BinarySearchCDF(g_envCondCDF, y, (int)envW, xi.x);
+
+    float u = ((float)x + 0.5f) / (float)envW;
+    float v = ((float)y + 0.5f) / (float)envH;
+    float phi = u * 2.0f * PI - PI;
+    float theta = v * PI;
+    float sinTheta = sin(theta);
+    float cosTheta = cos(theta);
+
+    if (sinTheta < 1e-6f) {
+        pdfOut = 0.0f;
+        return float3(0, 1, 0);
+    }
+
+    pdfOut = EnvMapPixelPdf(x, y, envW, envH);
+    return normalize(float3(sinTheta * cos(phi), cosTheta, sinTheta * sin(phi)));
+}
+
+float EnvMapPdf(float3 direction, uint envW, uint envH) {
+    float2 uv = DirToEnvUV(normalize(direction));
+    int x = clamp((int)floor(uv.x * (float)envW), 0, (int)envW - 1);
+    int y = clamp((int)floor(uv.y * (float)envH), 0, (int)envH - 1);
+    return EnvMapPixelPdf(x, y, envW, envH);
+}
+
+// -------------------------------------------------------
 // SurfaceHit
 // -------------------------------------------------------
 struct SurfaceHit {

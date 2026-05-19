@@ -5,13 +5,37 @@
 
 ---
 
+## 0. Latest Handoff Snapshot (2026-05-19)
+
+This block is the current source of truth for the next session. Older Phase 6
+sections below may still say "D-0 start possible" or `master`; treat those as
+historical notes.
+
+- Active phase: `Phase 6 - cap_sharing merge`
+- Detailed sub-phase: `D-1/D-2 selected - final policy is phase6-d-tonemap`
+- Blocked: `No`
+- Current branch: `phase6-d-tonemap`
+- Common baseline: `phase6-bc-integrated` @ `8cac6ab`
+- Selected D policy: keep current NRD repo emissive values and apply shared
+  `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`.
+- Raw and denoised paths still use identical ToneMap code, preserving the P4-6
+  validation policy.
+- Rejected-by-default comparison branch: `phase6-d-emissive` @ `8abb988`
+  (local cap_sharing emissives + ACES exposure 1.0). Use it only if the user
+  explicitly asks for the much darker cap_sharing-original night look.
+- Verification: Debug `ALL_BUILD` passed, and a 6s hidden runtime smoke test
+  initialized NRD, HDRI, EnergyLUT, and the procedural scene with empty stderr.
+- Next single action: cross-tool review of the final Phase 6 diff, then merge.
+
+---
+
 ## 0. Current Phase
 
-- Active phase: `Phase 5 - REBLUR quality tuning`
-- Detailed sub-phase: `P5-3c 완료 — Phase 5 perceptual recovery 종료`
+- Active phase: `Phase 6 - cap_sharing merge`
+- Detailed sub-phase: `Phase C 완료 — D-0 시작 가능`
 - Blocked: `No`
 - Branch: `master` (feature/nrd-phase0 는 master에 병합 완료 후 삭제됨)
-- 보조 문서: `P5_PBR_RECOVERY.md` 삭제됨 (2026-05-04, §7 참조)
+- 보조 문서: `MERGE_STATUS.md`, `P6_CAP_MERGE.md`, `P6_DIAGNOSIS.md`, `P6_HANDOFF.md` (Phase 6 종료 시 삭제)
 
 ### Phase Checklist
 
@@ -66,11 +90,11 @@ Phase 5 - REBLUR quality tuning (진행 중)
 
 | Item | Value |
 | --- | --- |
-| Hash | `f525c59` |
+| Hash | `HEAD (this commit; see git log)` |
 | Author | choi mun chan |
-| Date | 2026-05-04 |
-| Scope | `P5-3c` metrics PASS + PBR recovery campaign 종료 |
-| Summary | avg31 clamped raw vs denoised exposure_matched_ssim=0.9557 (기준 0.93 PASS). tools/p5_3c_capture.ps1, tools/p5_3c_metrics.py 추가. P5_PBR_RECOVERY.md 삭제 (§6 closure criteria 충족). |
+| Date | 2026-05-19 |
+| Scope | `P6-D` shared ToneMap exposure selected |
+| Summary | `shader/Tonemap.hlsl` applies `TONE_MAP_EXPOSURE=0.82` before ACES. Raw and denoised still share identical ToneMap code. |
 
 ---
 
@@ -78,18 +102,28 @@ Phase 5 - REBLUR quality tuning (진행 중)
 
 Do exactly one next action, not a vague "continue".
 
+Current note: the block below is historical. The active next action is
+cross-tool review of `phase6-d-tonemap` final Phase 6 diff, then merge.
+
 ```
-[Phase 6 — B-0 시작 가능]
+[Phase 6 — D-0 시작 가능]
 
-P5-3a/b/c 완료 커밋 완료. working tree 깨끗함.
-Phase 6 (cap_sharing 병합) 진행 중. 다음 단일 액션:
+P5-3a/b/c 완료 커밋 완료. Phase 6 (cap_sharing 병합) 진행 중.
+B-0 사전 검증 완료. B-1·2 광원 구조 통합 범위는 현재 HEAD에 이미 반영된 상태로 확인됨.
+B-3 EnvMap 코드/빌드/실제 HDRI 로드 검증 완료. B-4 HDRI miss 분기 적용 및 raw/denoised 캡처 통과.
+B-5 환경맵 NEE + 양방향 MIS 완료. Phase B(sky) 완료.
+C-0 BRDF 사전 검증 완료. cap_sharing `ComputeSpecularPDF`는 VNDF용 PDF로 판정.
+C-1 EnergyLUT 자원 추가 완료. t11/s1 슬롯 바인딩과 실행 로그 검증 통과.
+C-2 VNDF 도입 완료. 빌드/F1 OFF/ON 캡처 통과.
+C-3 Kulla-Conty MS 보정 완료. 빌드/F1 OFF/ON 캡처 통과.
+C-4 FIREFLY_CLAMP 재검증 완료. `FIREFLY_CLAMP=20.0` 유지 결정. Phase C(BRDF) 완료.
+다음 단일 액션:
 
-  B-0 사전 검증
-    1. git status 깨끗한지 확인 ✅
-    2. F1 OFF / F1 ON 베이스라인 캡처 2장
-       → build/b0_baseline_raw.png, build/b0_baseline_denoised.png
-    3. Scene.hlsli L98~108, L560~584 함수 본체 view (잔여 미확정 2건)
-    상세: MERGE_STATUS.md §2 / P6_CAP_MERGE.md §B-0
+  D option branch compare
+    - Current branch `phase6-d-tonemap`: keep emissive values and apply common ToneMap exposure 0.82.
+    - Compare against `phase6-d-emissive`: cap_sharing emissive values with ACES exposure 1.0.
+    - Capture F1 OFF/ON on both branches and pick final D policy.
+    상세: MERGE_STATUS.md §4 / P6_CAP_MERGE.md §D
 ```
 
 ---
@@ -115,6 +149,13 @@ Phase 6 (cap_sharing 병합) 진행 중. 다음 단일 액션:
 - `PathTracer.hlsl` now packs diffuse/specular with REBLUR-compatible normalized hit distance and YCoCg radiance
 - `PathTracer.hlsl` now packs normal/roughness with an NRD-compatible encoding layout
 - `Composite.hlsl` decodes YCoCg radiance back to linear RGB; formula is `diffuse + specular + emissive` (NOT `diffuse * albedo + ...`)
+- Phase 6 B-4: `GlobalUniforms` / `GlobalUB` now include `envWidth`, `envHeight`, `hasEnvMap`, `_padB`; PathTracer binds `t7=g_envMap`, `t8=g_envCondCDF`, `t9=g_envMargCDF`, `s0=s_envSampler`. Primary camera miss sky is routed through `emissive` so raw/denoised Composite paths share the same HDRI background.
+- Phase 6 B-5: environment-map NEE uses CDF importance sampling + BSDF/env MIS. Bounce-0 contribution is split by `lobe.pDiff` / `lobe.pSpec` before NRD packing. Environment no-occlusion hitT starts at `1e4f` (planned option A), and BSDF miss uses reverse `EnvMapPdf` MIS for non-specular paths.
+- Phase 6 C-1: `src/energy_lut.{h,cpp}` creates a 32x32 `R32G32_FLOAT` Kulla-Conty energy LUT. PathTracer pass binds it at `t11` with `s1` linear-clamp sampler; shader usage begins in C-3.
+- Phase 6 C-2: specular sampling switched from NDF GGX to VNDF. `ComputeSpecularPDF` now matches the VNDF sampler using `D * G1(V) / (4 * NdotV)`.
+- Phase 6 C-3: `EvaluateBRDF` includes Kulla-Conty multi-scatter compensation using `SampleEnergyLUT(NdotV, roughness)` and `SampleEnergyLUT(NdotL, roughness)`.
+- Phase 6 C-4: after VNDF + MS, F1 OFF 30s raw validation produced histogram 99th=2.36 / 99.9th=4.66 with no visible new firefly pattern. Keep `FIREFLY_CLAMP=20.0` to preserve P5-3a valid highlight policy.
+- Phase 6 D: final exposure policy is `phase6-d-tonemap`: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`. This applies equally to raw and denoised paths.
 - `P5_PBR_RECOVERY.md` - 임시 진단 문서 (P5-3a/b/c 실행 계획). Phase 5 종료 시 §7 패턴으로 삭제.
 
 ### Important current behavior
@@ -337,6 +378,76 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-19 | Codex       | P6 D-1/D-2 | Selected `phase6-d-tonemap` per handoff recommendation.
+Keep current NRD repo emissive values and shared `TONE_MAP_EXPOSURE=0.82`; do not use
+the darker cap_sharing emissive branch unless explicitly requested. Updated STATUS for
+final Phase D policy and prepared Debug ALL_BUILD verification.
+2026-05-19 | Codex       | P6 verify | Debug ALL_BUILD passed on `phase6-d-tonemap`.
+6s hidden runtime smoke from `build/` initialized NRD backend, procedural city, HDRI
+`moonless_golf_4k.hdr`, and EnergyLUT. stderr was empty.
+2026-05-18 | Codex       | P6 D-option A | Branch `phase6-d-tonemap`.
+Keep current emissive values and apply a shared ToneMap exposure scalar `TONE_MAP_EXPOSURE=0.82`.
+Raw and denoised still use identical ToneMap, so P4-6 policy is preserved.
+2026-05-18 | Codex       | P6 C-4 | FIREFLY_CLAMP 재검증 완료. C-3 이후 F1 OFF 30초 정착
+raw 캡처 `build/c4_firefly_raw.png` 및 `build/c4_firefly_histogram.txt` 생성. stdout histogram:
+99th=2.36, 99.9th=4.66, stderr 비어 있음. 시각 확인상 새 firefly 패턴/폭주 없음.
+P5-3a에서 20.0으로 완화한 목적이 valid puddle/lamp highlight 보존이었고 현 캡처에서 회귀 증거가 없어
+`FIREFLY_CLAMP=20.0` 유지로 결정. Phase C 완료. 다음 단일 액션은 D-0 exposure 측정.
+2026-05-18 | Codex       | P6 C-3 | Kulla-Conty MS 보정 적용 완료. `BRDF.hlsli`에
+`g_energyLUT`/`s_energyLUTSampler` 및 `SampleEnergyLUT` 추가. `EvaluateBRDF`를 MS 보정 포함 확장판으로
+교체했고 LUT 좌표는 C-0에서 확인한 `float2(NdotV, roughness)` 유지. Debug ALL_BUILD 통과.
+캡처: `build/c3_ms_raw.png`, `build/c3_ms_denoised.png`; stderr 비어 있음. 시각 확인상 표면 폭주/검어짐 없음,
+histogram 99.9th=4.66. 다음 단일 액션은 C-4 FIREFLY_CLAMP 재검증.
+2026-05-18 | Codex       | P6 C-2 | VNDF 도입 완료. `BRDF.hlsli`에 `ImportanceSampleVNDF` 추가,
+`ComputeSpecularPDF`를 C-0에서 확인한 VNDF용 PDF `D * G1(V) / (4 * NdotV)`로 교체.
+PathTracer specular sampling 호출을 `ImportanceSampleGGX`에서 `ImportanceSampleVNDF(xi, N, V, roughness)`로 전환.
+Debug ALL_BUILD 통과. 캡처: `build/c2_vndf_raw.png`, `build/c2_vndf_denoised.png`; stderr 비어 있음.
+시각 확인상 검은 화면, 폭주, obvious puddle/specular 회귀 없음. 다음 단일 액션은 C-3 Kulla-Conty MS 보정.
+2026-05-18 | Codex       | P6 C-1 | EnergyLUT 자원 추가 완료. AGENTS 파일 규약에 맞춰
+`src/energy_lut.h`, `src/energy_lut.cpp` 추가. `Context`에 `m_energyLUT` 생성 경로 연결,
+PathTracer pass에서 `t11` SRV와 `s1` sampler를 바인딩/해제. 아직 셰이더가 LUT를 사용하지 않으므로
+렌더 결과는 C-0 baseline 유지가 기대값. Debug ALL_BUILD 통과. 실행 stdout에서
+`EnergyLUT: Bake complete (32x32)` 확인, `build/c1_lut_raw.png`, `build/c1_lut_denoised.png`
+캡처, stderr 비어 있음. AGENTS.md §4 슬롯 표 갱신 완료. 다음 단일 액션은 C-2 VNDF 도입.
+2026-05-18 | Codex       | P6 C-0 | BRDF 사전 검증 완료. B-5 완료 캡처를
+`build/c0_baseline_raw.png`, `build/c0_baseline_denoised.png`로 복사. cap_sharing `BRDF.hlsli`
+본체 확인: `ComputeSpecularPDF`는 `D(H) * G1(V) / (4 * NdotV)` 형태의 VNDF용 PDF로 판정되어
+C-2에서 그대로 교체 가능. `ComputeLobeWeights`는 현재 NRD 레포와 동일. `EvaluateBRDF`는
+`SampleEnergyLUT(NdotV, roughness)` / `SampleEnergyLUT(NdotL, roughness)` 좌표를 쓰는
+Kulla-Conty MS 보정 포함 확장판. LUT 좌표 순서는 `float2(NdotV, roughness)`로 확인.
+다음 단일 액션은 C-1 EnergyLUT 자원 추가.
+2026-05-18 | Codex       | P6 B-5 | 환경맵 NEE + 양방향 MIS 완료. `Scene.hlsli`에
+CDF binary search, `SampleEnvMapDir`, `EnvMapPdf` 추가. PathTracer direct-light NEE 뒤에
+environment NEE 추가, P3-5 정책대로 bounce0에서 lobe.pDiff/pSpec 분배 및 representative hitT 업데이트.
+차폐 없음 env hitT는 계획 옵션 A인 `1e4f`로 시작. Miss 경로에는 `EnvMapPdf` reverse MIS 적용,
+primary sky emissive routing 유지. Debug ALL_BUILD 통과. 8초 정착 캡처:
+`build/b5_final_raw.png`, `build/b5_final_denoised.png`; stderr 비어 있음. 시각 확인상 HDRI background 유지,
+puddle reflection 정상 범위, 검은 화면/폭주 없음. Phase B 완료. 다음 단일 액션은 C-0 BRDF 사전 검증.
+2026-05-18 | Codex       | P6 B-4 | HDRI miss 분기 적용 완료. `GlobalUniforms`/`GlobalUB`에
+envWidth/envHeight/hasEnvMap/_padB 추가, PathTracer pass SRV 바인딩 t0~t9 확장, s0 sampler
+바인딩/해제 추가. `Scene.hlsli`에 t7~t9/s0 선언과 `DirToEnvUV`/`SampleEnvironmentMap` 추가.
+Primary camera miss는 NRD denoisable surface가 아니므로 emissive로 routing해 raw/denoised Composite
+양쪽에서 HDRI background가 동일하게 보이도록 처리. Debug ALL_BUILD 통과. 캡처:
+`build/b4_env_raw.png`, `build/b4_env_denoised.png`; stderr 비어 있음. AGENTS.md §4 슬롯 표 갱신 완료.
+다음 단일 액션은 B-5 환경맵 NEE + 양방향 MIS.
+2026-05-18 | Codex       | P6 B-3 | HDRI 에셋 배치 및 실제 로드 검증 완료.
+`hdri/moonless_golf_4k.hdr`를 배치했고 CMake `UpdateAssets`가 `build/hdri/`로 복사하는 것 확인.
+Debug ALL_BUILD 통과. 실행 stdout에서 `EnvMap: CDF baked (4096x2048, totalSum=890389.00)` 및
+`EnvMap: Loaded 4096x2048 HDRI [hdri/moonless_golf_4k.hdr]` 확인, stderr 비어 있음.
+다음 단일 액션은 B-4 miss 분기 환경맵 사용 + 슬롯 표 갱신.
+2026-05-18 | Codex       | P6 B-3 | EnvMap 자원 추가 코드 완료. AGENTS 파일 규약에 맞춰
+`src/env_map.h`, `src/env_map.cpp`로 추가했고, `Context`에 optional `m_envMap` 로드 경로를 연결.
+`CMakeLists.txt`는 `hdri/`를 `build/hdri/`로 복사하도록 확장, `hdri/.gitkeep` 추가.
+Debug ALL_BUILD 통과. 런타임은 HDRI 파일이 없어 `EnvMap: HDRI not found [hdri/moonless_golf_4k.hdr]
+- using procedural sky` 폴백 로그를 확인했고 stderr는 비어 있음. 실제 `Loaded`/`CDF baked`
+검증은 `hdri/moonless_golf_4k.hdr` 배치 후 재실행 필요.
+2026-05-18 | Codex       | P6 B-0 | Phase 6 사전 검증 완료. Debug ALL_BUILD 통과.
+기본 카메라에서 `build/b0_baseline_raw.png`, `build/b0_baseline_denoised.png` 캡처 생성.
+런타임 stderr 비어 있음, NRD backend ready, Scene built lightCount=10. PathTracer/Composite/ToneMap
+슬롯 표는 STATUS.md §3 / AGENTS.md §4와 일치. Scene.hlsli는 총 541줄이라 P6 문서의 L560~584는
+존재하지 않으며, L98~108은 `SampleTrianglePoint`, 후반 미확정 함수 후보는 L517~539 `FindHitLight`.
+추가 발견: B-1·2 범위(80B LightDesc/ShaderLight, 통합 SampleDirectLight)는 이미 현재 HEAD에
+반영되어 있어 MERGE_STATUS.md에서 B-1·2를 확인 완료로 정리. 다음 단일 액션은 B-3 EnvMap 자원 추가.
 2026-05-04 | Claude Code | P5-3c | avg31 clamped raw frames vs denoised 객관 metric 계산.
 exposure_matched_ssim=0.9557 (기준 0.93 PASS, P4-3 baseline 0.9288 대비 +0.027).
 tools/p5_3c_metrics.py JSON 직렬화 버그(numpy.bool_) 수정. P5_PBR_RECOVERY.md §6
