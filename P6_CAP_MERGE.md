@@ -11,6 +11,7 @@
 
 - `master` contains the selected `phase6-d-tonemap` path.
 - Current branch `phase6-d-emissive` continues the darker cap_sharing-original night look at the user's request.
+- User decision: proceed with the emissive direction after `phase6-d-tonemap` was merged to `master`.
 - Policy on this branch: local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0` before ACES for both raw and denoised paths.
 
 ---

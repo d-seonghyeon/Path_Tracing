@@ -11,13 +11,15 @@
 - `master` now contains the selected `phase6-d-tonemap` path.
 - Current branch: `phase6-d-emissive`, merged forward from `master` for continued comparison work.
 - Purpose: continue the darker cap_sharing-original emissive direction requested by the user.
+- User decision: proceed with the emissive direction after `phase6-d-tonemap` was merged to `master`.
 - Policy on this branch: local `cap_sharing_for_upload` emissive values in `src/scene_desc.cpp` and shared ToneMap exposure `1.0`.
 - Prior captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
 - Prior metrics: raw luma `0.3192`, clip `0.0000`; denoised luma `0.3584`, clip `0.0000`.
 - Verification passed: Debug `ALL_BUILD` and a 6s hidden runtime smoke test.
-- Post-merge recapture: `build/capture_0_raw.png`, `build/capture_1_denoised.png`.
+- Post-merge recapture: `build/d_emissive_after_master_raw.png`, `build/d_emissive_after_master_denoised.png`.
 - Post-merge metrics: raw luma `0.3189`, clip `0.0000`; denoised luma `0.3582`, clip `0.0000`.
-- Next action: decide whether to keep iterating on the darker emissive look or stop at this comparison branch.
+- Visual pass: denoised image keeps the darker night look without black-output, obvious runaway, or measured clipping.
+- Next action: if this darker look is desired as the final policy, merge `phase6-d-emissive` to `master`; otherwise keep it as the comparison branch.
 
 ---
 
