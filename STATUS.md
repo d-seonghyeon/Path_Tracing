@@ -16,8 +16,8 @@ historical notes.
 - Blocked: `No`
 - Current branch: `phase6-d-emissive`
 - `master` now contains the selected `phase6-d-tonemap` path.
-- Purpose: continue the darker cap_sharing-original emissive direction requested by the user.
-- User decision: proceed with the emissive direction after `phase6-d-tonemap` was merged to `master`.
+- Purpose: keep the darker cap_sharing-original emissive direction as a comparison branch requested by the user.
+- User decision: keep `master` unchanged on the selected `phase6-d-tonemap` policy, and retain `phase6-d-emissive` as a comparison branch only.
 - Policy on this branch: local `cap_sharing_for_upload` emissive values in `src/scene_desc.cpp` and shared ToneMap exposure `1.0`.
 - Previous emissive captures: `build/d_emissive_raw.png`, `build/d_emissive_denoised.png`.
 - Previous emissive metrics: raw luma `0.3192`, clip `0.0000`; denoised luma `0.3584`, clip `0.0000`.
@@ -26,7 +26,7 @@ historical notes.
 - Post-merge recapture: `build/d_emissive_after_master_raw.png`, `build/d_emissive_after_master_denoised.png`.
   Metrics: raw luma `0.3189`, clip `0.0000`; denoised luma `0.3582`, clip `0.0000`.
 - Visual pass: denoised image keeps the darker night look without black-output, obvious runaway, or measured clipping.
-- Next single action: if this darker look is desired as the final policy, merge `phase6-d-emissive` to `master`; otherwise keep it as the comparison branch.
+- Next single action: do not merge this branch to `master`; keep it available for visual comparison, then continue Phase E cleanup from `master` when requested.
 
 ---
 
@@ -157,7 +157,7 @@ C-4 FIREFLY_CLAMP 재검증 완료. `FIREFLY_CLAMP=20.0` 유지 결정. Phase C(
 - Phase 6 C-3: `EvaluateBRDF` includes Kulla-Conty multi-scatter compensation using `SampleEnergyLUT(NdotV, roughness)` and `SampleEnergyLUT(NdotL, roughness)`.
 - Phase 6 C-4: after VNDF + MS, F1 OFF 30s raw validation produced histogram 99th=2.36 / 99.9th=4.66 with no visible new firefly pattern. Keep `FIREFLY_CLAMP=20.0` to preserve P5-3a valid highlight policy.
 - Phase 6 D: final exposure policy is `phase6-d-tonemap`: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`. This applies equally to raw and denoised paths.
-- Phase 6 D emissive branch: at user request, `phase6-d-emissive` continues as an active darker-look branch with local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0`.
+- Phase 6 D emissive branch: at user request, `phase6-d-emissive` remains as a darker-look comparison branch with local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0`. Do not merge it to `master` unless the user explicitly reverses this decision.
 - `P5_PBR_RECOVERY.md` - 임시 진단 문서 (P5-3a/b/c 실행 계획). Phase 5 종료 시 §7 패턴으로 삭제.
 
 ### Important current behavior
@@ -380,6 +380,8 @@ No critical conflicts found. Details:
 Newest entry goes on top.
 
 ```
+2026-05-19 | Codex       | P6 emissive decision | User clarified that `master` should stay unchanged.
+Keep `phase6-d-emissive` as a comparison branch only; do not merge it into `master`.
 2026-05-19 | Codex       | P6 emissive-cont | User explicitly asked to continue the emissive direction.
 Treat `phase6-d-emissive` as the active darker-look branch, not just a stopped comparison branch.
 Focused look pass completed: denoised image keeps the darker night look without black-output, obvious runaway,

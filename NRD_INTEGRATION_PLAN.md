@@ -11,7 +11,7 @@
 - cap_sharing merge is tracked as Phase 6 on top of the original NRD Phase 0-4 plan.
 - Completed Phase 6 features: HDRI environment map loading, CDF sampling, environment NEE/MIS, VNDF specular sampling, and Kulla-Conty multi-scatter energy compensation via `g_energyLUT`.
 - Final master Phase D policy: keep current NRD emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` for both raw and denoised ToneMap paths.
-- Emissive comparison branch exception: `phase6-d-emissive` uses local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0`.
+- Emissive comparison branch exception: `phase6-d-emissive` uses local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0`; keep it comparison-only while `master` remains on the selected `phase6-d-tonemap` policy.
 
 ---
 

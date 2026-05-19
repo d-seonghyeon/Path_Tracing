@@ -14,7 +14,7 @@
 - Specular sampling uses VNDF. `ImportanceSampleVNDF` and `ComputeSpecularPDF = D * G1(V) / (4 * NdotV)` must stay matched; do not restore the old NDF GGX PDF.
 - Kulla-Conty energy compensation uses `g_energyLUT` at `t11` and `s1`; LUT sample coordinates are `float2(NdotV, roughness)`.
 - Phase D exposure policy is final unless the user explicitly asks otherwise: keep current NRD repo emissive values and apply shared `TONE_MAP_EXPOSURE=0.82` before ACES in `shader/Tonemap.hlsl`.
-- Current explicit exception: on `phase6-d-emissive`, continue the darker cap_sharing-original night look with local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0`.
+- Current explicit exception: `phase6-d-emissive` is a comparison-only branch for the darker cap_sharing-original night look, using local cap_sharing emissive values and shared `TONE_MAP_EXPOSURE=1.0`; do not merge it to `master` unless the user explicitly reverses this decision.
 - Do not add a denoised-only exposure multiplier. Any exposure change must apply identically to raw and denoised paths.
 
 ---
